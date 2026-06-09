@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GALGAH — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<!-- Firebase Compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<style>
+  * { font-family: 'Inter', sans-serif; }
+  :root { --pink:#F9B8C4; --rose:#8B2252; --cream:#FFF5F0; --light-rose:#f5e6ee; }
+  body { background:var(--cream); }
+  .sidebar { transition:transform 0.3s ease; }
+  .page { display:none; }
+  .page.active { display:block; }
+  .nav-item { transition:all 0.2s; }
+  .nav-item.active { background:var(--rose); color:white; }
+  .nav-item:not(.active):hover { background:var(--light-rose); }
+
+  /* Loading overlay */
+  #loading-overlay {
+    position:fixed; inset:0; z-index:9999;
+    background:rgba(255,245,240,0.95);
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    gap:16px;
+  }
+  #loading-overlay.hidden { display:none; }
+  .spinner {
+    width:48px; height:48px; border:4px solid #fde8ed;
+    border-top-color:var(--rose); border-radius:50%;
+    animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  .toast { position:fixed; bottom:80px; right:20px; z-index:9000; transform:translateX(130%); transition:transform 0.3s ease; }
+  .toast.show { transform:translateX(0); }
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.2s; }
+  .modal-backdrop.open { opacity:1; pointer-events:all; }
+  .chart-container { position:relative; height:220px; }
+  .skeleton { background:linear-gradient(90deg,#f0d0d8 25%,#fce8ec 50%,#f0d0d8 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; border-radius:8px; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  .badge-rec { background:#FFD700; color:#5a4000; font-size:10px; padding:1px 6px; border-radius:99px; font-weight:700; }
+  .badge-sea { background:#4CAF50; color:white; font-size:10px; padding:1px 6px; border-radius:99px; font-weight:700; }
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#f1f1f1; }
+  ::-webkit-scrollbar-thumb { background:var(--pink); border-radius:3px; }
+  @media (max-width:768px) {
+    #sidebar { position:fixed; left:0; top:0; height:100vh; z-index:200; transform:translateX(-100%); }
+    #sidebar.mobile-open { transform:translateX(0); }
+    #bottom-nav { display:flex !important; }
+    #main-content { margin-left:0 !important; padding-bottom:70px; }
+  }
+  #bottom-nav { display:none; }
+  .product-card { transition:all 0.15s; cursor:pointer; }
+  .product-card:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(139,34,82,0.15); }
+  .product-card:active { transform:scale(0.97); }
+  .btn-rose { background:var(--rose); color:white; }
+  .btn-rose:hover { opacity:0.9; }
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance:none; }
+
+  /* sync indicator */
+  #sync-dot { width:8px; height:8px; border-radius:50%; background:#22c55e; display:inline-block; }
+  #sync-dot.syncing { background:#f59e0b; animation:pulse 1s infinite; }
+  #sync-dot.error { background:#ef4444; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+</style>
+</head>
+<body class="min-h-screen" style="background:#FFF5F0">
+
+<!-- LOADING OVERLAY -->
+<div id="loading-overlay">
+  <div class="text-4xl">🐄</div>
+  <div class="spinner"></div>
+  <p id="loading-text" class="text-sm font-medium" style="color:var(--rose)">Memuat data GALGAH…</p>
+</div>
+
+<!-- SIDEBAR -->
+<aside id="sidebar" class="sidebar fixed left-0 top-0 h-full w-64 bg-white shadow-xl z-50 flex flex-col">
+  <div class="p-5 border-b" style="border-color:#fde8ed">
+    <div class="flex items-center gap-3">
+      <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl" style="background:var(--rose)">🐄</div>
+      <div>
+        <h1 class="font-extrabold text-lg" style="color:var(--rose)">GALGAH</h1>
+        <p class="text-xs text-gray-400">RIK UI Canteen</p>
+      </div>
+    </div>
+  </div>
+  <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+    <a href="#" class="nav-item active flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-white" onclick="return navigate('dashboard',this)">
+      <span class="text-lg">📊</span> Dashboard
+    </a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('kasir',this)">
+      <span class="text-lg">🛒</span> Kasir
+    </a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('menu',this)">
+      <span class="text-lg">🥛</span> Menu & Produk
+    </a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('stok',this)">
+      <span class="text-lg">📦</span> Stok & Bahan Baku
+    </a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('laporan',this)">
+      <span class="text-lg">📈</span> Laporan & Analitik
+    </a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('settings',this)">
+      <span class="text-lg">⚙️</span> Pengaturan
+    </a>
+  </nav>
+  <div class="p-4 border-t flex items-center gap-2" style="border-color:#fde8ed">
+    <span id="sync-dot"></span>
+    <p id="sync-status" class="text-xs text-gray-400">Tersinkron</p>
+  </div>
+</aside>
+
+<!-- MOBILE OVERLAY -->
+<div id="sidebar-overlay" class="fixed inset-0 bg-black/40 z-40 hidden" onclick="closeMobileSidebar()"></div>
+
+<!-- MAIN -->
+<div id="main-content" style="margin-left:256px;min-height:100vh;">
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b px-6 py-4 flex items-center justify-between" style="border-color:#fde8ed">
+    <div class="flex items-center gap-3">
+      <button class="md:hidden p-2 rounded-lg" style="background:#fde8ed" onclick="toggleMobileSidebar()">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div>
+        <h2 id="page-title" class="font-bold text-gray-800 text-base">Dashboard</h2>
+        <p id="page-sub" class="text-xs text-gray-400"></p>
+      </div>
+    </div>
+    <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style="background:var(--rose)">G</div>
+  </header>
+
+  <main class="p-6">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div id="stock-alert-banner" class="hidden mb-5 p-4 rounded-xl flex items-center gap-3" style="background:#fef2f2;border:1px solid #fecaca">
+        <span class="text-xl">⚠️</span>
+        <div class="flex-1">
+          <p class="font-semibold text-sm" style="color:#b91c1c">Peringatan Stok Rendah</p>
+          <p id="stock-alert-text" class="text-xs mt-0.5" style="color:#ef4444"></p>
+        </div>
+        <button onclick="navigate('stok',null)" class="text-xs font-semibold underline" style="color:#b91c1c">Lihat →</button>
+      </div>
+      <div class="mb-6">
+        <h3 id="greeting-text" class="text-2xl font-bold text-gray-800"></h3>
+        <p id="greeting-date" class="text-gray-500 text-sm mt-1"></p>
+      </div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-3"><span class="text-2xl">💰</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#dcfce7;color:#166534">Hari ini</span></div>
+          <p class="text-xs text-gray-500 font-medium">Revenue Hari Ini</p>
+          <p id="stat-revenue" class="text-xl font-extrabold mt-1" style="color:var(--rose)">Rp 0</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-3"><span class="text-2xl">🧾</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#dbeafe;color:#1d4ed8">Hari ini</span></div>
+          <p class="text-xs text-gray-500 font-medium">Total Transaksi</p>
+          <p id="stat-trx" class="text-xl font-extrabold mt-1 text-gray-800">0</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-3"><span class="text-2xl">⭐</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#fef9c3;color:#854d0e">Terlaris</span></div>
+          <p class="text-xs text-gray-500 font-medium">Produk Terlaris</p>
+          <p id="stat-bestseller" class="text-sm font-extrabold mt-1 text-gray-800 truncate">—</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-3"><span class="text-2xl">📊</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#f3e8ff;color:#6b21a8">Rata-rata</span></div>
+          <p class="text-xs text-gray-500 font-medium">Avg. Nilai Order</p>
+          <p id="stat-avg" class="text-xl font-extrabold mt-1" style="color:var(--rose)">Rp 0</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+        <div class="lg:col-span-3 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <h4 class="font-bold text-gray-700 mb-4">Revenue 7 Hari Terakhir</h4>
+          <div class="chart-container"><canvas id="chart-revenue-7d"></canvas></div>
+        </div>
+        <div class="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <h4 class="font-bold text-gray-700 mb-4">5 Transaksi Terakhir</h4>
+          <div id="recent-transactions"><div class="skeleton h-12 mb-2"></div><div class="skeleton h-12 mb-2"></div><div class="skeleton h-12"></div></div>
+        </div>
+      </div>
+      <div class="flex gap-3 flex-wrap">
+        <button onclick="exportDailyPDF()" class="flex items-center gap-2 px-5 py-3 rounded-xl text-white text-sm font-semibold btn-rose shadow-md">🖨️ Cetak Laporan Harian PDF</button>
+        <button onclick="navigate('kasir',null)" class="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold shadow-sm border-2" style="color:var(--rose);border-color:var(--rose)">🛒 Buka Kasir</button>
+      </div>
+      <button onclick="openWAModal()" title="Kirim Ringkasan WhatsApp" class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl hover:scale-110 transition-transform" style="background:var(--rose)">📱</button>
+    </div>
+
+    <!-- KASIR -->
+    <div id="page-kasir" class="page">
+      <div class="flex gap-5" style="min-height:70vh">
+        <div class="flex-1 overflow-y-auto">
+          <div id="category-tabs" class="mb-4 flex gap-2 flex-wrap"></div>
+          <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+        </div>
+        <div class="w-72 flex-shrink-0">
+          <div class="bg-white rounded-2xl shadow-sm sticky top-20" style="border:1px solid #fde8ed">
+            <div class="p-4 border-b flex items-center justify-between" style="border-color:#fde8ed">
+              <h4 class="font-bold text-gray-700">🛒 Keranjang</h4>
+              <button onclick="resetCart()" class="text-xs font-medium" style="color:#ef4444">Reset</button>
+            </div>
+            <div id="cart-items" class="p-4" style="min-height:180px;max-height:42vh;overflow-y:auto">
+              <div id="cart-empty" class="text-center py-8 text-gray-400"><p class="text-3xl mb-2">🥛</p><p class="text-sm">Keranjang kosong</p></div>
+            </div>
+            <div class="p-4 border-t" style="border-color:#fde8ed">
+              <div class="flex justify-between items-center mb-4">
+                <span class="font-semibold text-gray-600 text-sm">Total</span>
+                <span id="cart-total" class="font-extrabold text-lg" style="color:var(--rose)">Rp 0</span>
+              </div>
+              <button onclick="processTransaction()" class="w-full py-3 rounded-xl text-white font-bold text-sm btn-rose">✅ Proses Transaksi</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MENU -->
+    <div id="page-menu" class="page">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="font-bold text-gray-700">Daftar Produk</h3>
+        <button onclick="openProductModal(null)" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">+ Tambah Produk</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm overflow-hidden" style="border:1px solid #fde8ed">
+        <div class="p-4 border-b" style="border-color:#fde8ed">
+          <input type="text" id="menu-search" placeholder="🔍 Cari produk..." class="w-full px-4 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed" oninput="renderMenuTable()"/>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr style="background:#fdf2f6" class="text-left text-xs uppercase tracking-wide text-gray-500 font-semibold">
+              <th class="px-4 py-3">Produk</th><th class="px-4 py-3">Kategori</th><th class="px-4 py-3">Ukuran</th><th class="px-4 py-3">Harga</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
+            </tr></thead>
+            <tbody id="menu-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- STOK -->
+    <div id="page-stok" class="page">
+      <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <h3 class="font-bold text-gray-700">Stok & Bahan Baku</h3>
+        <div class="flex gap-2">
+          <button onclick="openRestockModal()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">📥 Terima Stok</button>
+          <button onclick="exportStokPDF()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📄 Export PDF</button>
+        </div>
+      </div>
+      <div id="stok-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+    </div>
+
+    <!-- LAPORAN -->
+    <div id="page-laporan" class="page">
+      <div class="bg-white rounded-2xl p-4 shadow-sm mb-5 flex flex-wrap gap-3 items-center" style="border:1px solid #fde8ed">
+        <div class="flex gap-2">
+          <button onclick="setLapPeriod('week')" id="btn-week" class="px-4 py-2 rounded-xl text-sm font-medium btn-rose">Minggu Ini</button>
+          <button onclick="setLapPeriod('month')" id="btn-month" class="px-4 py-2 rounded-xl text-sm font-medium bg-gray-100 text-gray-600">Bulan Ini</button>
+          <button onclick="setLapPeriod('custom')" id="btn-custom" class="px-4 py-2 rounded-xl text-sm font-medium bg-gray-100 text-gray-600">Custom</button>
+        </div>
+        <div id="custom-date-range" class="hidden flex gap-2 items-center">
+          <input type="date" id="lap-date-from" class="px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed" onchange="refreshLaporan()"/>
+          <span class="text-gray-400">–</span>
+          <input type="date" id="lap-date-to" class="px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed" onchange="refreshLaporan()"/>
+        </div>
+        <div class="ml-auto flex gap-2">
+          <button onclick="exportCSV()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📊 CSV</button>
+          <button onclick="exportLaporanPDF()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">📄 PDF</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 font-medium mb-1">Total Revenue</p><p id="lap-total-rev" class="text-2xl font-extrabold" style="color:var(--rose)">Rp 0</p></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 font-medium mb-1">Total Transaksi</p><p id="lap-total-trx" class="text-2xl font-extrabold text-gray-800">0</p></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 font-medium mb-1">Avg. Order Value</p><p id="lap-avg-order" class="text-2xl font-extrabold" style="color:var(--rose)">Rp 0</p></div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+        <div class="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Revenue per Hari</h4><div class="chart-container"><canvas id="chart-lap-daily"></canvas></div></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Revenue per Kategori</h4><div style="height:220px;position:relative"><canvas id="chart-lap-pie"></canvas></div></div>
+      </div>
+      <div class="bg-white rounded-2xl p-5 shadow-sm mb-5" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Top 10 Produk Terlaris</h4><div style="height:280px;position:relative"><canvas id="chart-lap-top"></canvas></div></div>
+      <div class="bg-white rounded-2xl shadow-sm overflow-hidden" style="border:1px solid #fde8ed">
+        <div class="p-4 border-b" style="border-color:#fde8ed"><h4 class="font-bold text-gray-700">Riwayat Transaksi</h4></div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr style="background:#fdf2f6" class="text-left text-xs uppercase tracking-wide text-gray-500 font-semibold">
+              <th class="px-4 py-3 cursor-pointer" onclick="sortTrx('time')">Waktu ↕</th>
+              <th class="px-4 py-3">Produk</th>
+              <th class="px-4 py-3 cursor-pointer" onclick="sortTrx('total')">Total ↕</th>
+              <th class="px-4 py-3">Items</th>
+            </tr></thead>
+            <tbody id="lap-trx-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="page-settings" class="page">
+      <div class="max-w-lg">
+        <h3 class="font-bold text-gray-700 mb-5">Pengaturan</h3>
+        <div class="bg-white rounded-2xl shadow-sm p-6 space-y-5" style="border:1px solid #fde8ed">
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">Nama Toko</label>
+            <input type="text" id="setting-store-name" placeholder="Galgah" class="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-1">Nomor WhatsApp Pemilik</label>
+            <p class="text-xs text-gray-400 mb-2">Format: 628xxxxxxxxx (tanpa + atau spasi)</p>
+            <input type="text" id="setting-wa-number" placeholder="628123456789" class="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/>
+          </div>
+          <div class="flex items-center justify-between py-2">
+            <div>
+              <p class="text-sm font-semibold text-gray-700">Reminder Ringkasan (21:00)</p>
+              <p class="text-xs text-gray-400 mt-0.5">Notifikasi otomatis setiap malam</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-reminder" class="sr-only peer"/>
+              <div id="toggle-track" class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+          </div>
+          <button onclick="saveSettings()" class="w-full py-3 rounded-xl text-white font-bold text-sm btn-rose">💾 Simpan Pengaturan</button>
+        </div>
+
+        <!-- Firebase status card -->
+        <div class="mt-4 bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-lg">🔥</span>
+            <p class="font-semibold text-sm text-gray-700">Status Firebase</p>
+            <span id="fb-status-badge" class="text-xs px-2 py-1 rounded-full font-medium" style="background:#dcfce7;color:#166534">Terhubung</span>
+          </div>
+          <p class="text-xs text-gray-400">Project: <span class="font-mono font-medium text-gray-600">galgahh-e8726</span></p>
+          <p class="text-xs text-gray-400 mt-0.5">Data real-time tersinkron ke Firestore</p>
+          <button onclick="confirmResetData()" class="mt-3 text-xs font-medium px-3 py-1.5 rounded-lg border" style="color:#ef4444;border-color:#fecaca">🗑️ Reset Semua Data</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 z-50 bg-white border-t px-2 py-2 justify-around" style="border-color:#fde8ed">
+  <button onclick="navigate('dashboard',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📊</span>Home</button>
+  <button onclick="navigate('kasir',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">🛒</span>Kasir</button>
+  <button onclick="navigate('menu',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">🥛</span>Menu</button>
+  <button onclick="navigate('stok',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📦</span>Stok</button>
+  <button onclick="navigate('laporan',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📈</span>Laporan</button>
+</nav>
+
+<!-- ===== MODALS ===== -->
+<!-- WA Modal -->
+<div id="wa-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-gray-800">📱 Ringkasan WhatsApp</h3>
+      <button onclick="closeModal('wa-modal')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+    </div>
+    <div id="wa-message-preview" class="rounded-xl p-4 text-sm text-gray-700 whitespace-pre-wrap font-mono mb-4 max-h-64 overflow-y-auto" style="background:#f0fdf4"></div>
+    <div class="flex gap-3">
+      <button onclick="sendWA()" class="flex-1 py-3 rounded-xl text-white font-bold text-sm" style="background:#25D366">📲 Buka WhatsApp</button>
+      <button onclick="copyWA()" class="flex-1 py-3 rounded-xl font-bold text-sm border-2" style="color:var(--rose);border-color:var(--rose)">📋 Copy</button>
+    </div>
+  </div>
+</div>
+
+<!-- Product Modal -->
+<div id="product-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="product-modal-title" class="font-bold text-gray-800">Tambah Produk</h3>
+      <button onclick="closeModal('product-modal')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+    </div>
+    <form id="product-form" class="space-y-4" onsubmit="saveProduct(event)">
+      <input type="hidden" id="pf-id"/>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Nama Produk *</label><input type="text" id="pf-name" required class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Kategori</label><select id="pf-category" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"><option>Susu Reguler</option><option>Cookies & Milk</option><option>Reserve Series</option><option>Add-on</option></select></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Ukuran</label><select id="pf-size" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"><option>Regular</option><option>Large</option><option>Single</option></select></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Harga (Rp) *</label><input type="number" id="pf-price" required min="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
+      <div class="flex gap-5">
+        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-recommended" class="rounded"/> Recommended ⭐</label>
+        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-seasonal" class="rounded"/> Seasonal 🍃</label>
+      </div>
+      <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-active" class="rounded" checked/> Aktif (tampil di Kasir)</label>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal('product-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
+        <button type="submit" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Restock Modal -->
+<div id="restock-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-bold text-gray-800">📥 Terima Stok Hari Ini</h3>
+      <button onclick="closeModal('restock-modal')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+    </div>
+    <div id="restock-form-body" class="space-y-3 max-h-[55vh] overflow-y-auto"></div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closeModal('restock-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
+      <button onclick="saveRestock()" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">✅ Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Transaction Success -->
+<div id="trx-success-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-7 text-center">
+    <div class="text-6xl mb-3">✅</div>
+    <h3 class="font-bold text-gray-800 text-lg mb-1">Transaksi Berhasil!</h3>
+    <p id="trx-success-amount" class="text-3xl font-extrabold mb-5" style="color:var(--rose)"></p>
+    <div class="flex gap-3">
+      <button onclick="closeModal('trx-success-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Tutup</button>
+      <button onclick="sendTrxWA()" class="flex-1 py-3 rounded-xl text-white text-sm font-bold" style="background:#25D366">📲 Kirim Struk WA</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast">
+  <div class="bg-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3" style="min-width:240px;border:1px solid #fde8ed">
+    <span id="toast-icon" class="text-xl">✅</span>
+    <p id="toast-msg" class="text-sm font-medium text-gray-700"></p>
+  </div>
+</div>
+
+<!-- ===== JS ===== -->
+<script>
+// ═══════════════════════════════════════════════
+//  FIREBASE INIT
+// ═══════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyDDWXBjThpApW28X3N8W6oCf0-SRrawQeQ",
+  authDomain: "galgahh-e8726.firebaseapp.com",
+  projectId: "galgahh-e8726",
+  storageBucket: "galgahh-e8726.firebasestorage.app",
+  messagingSenderId: "943565273691",
+  appId: "1:943565273691:web:2658eca8929d83483a9d7e"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const CONFIG_REF = db.collection('galgah').doc('config');
+const TRX_COLL   = db.collection('transactions');
+
+// ═══════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════
+let DB = { transactions:[], products:[], stock:[], settings:{storeName:'Galgah',waNumber:'',reminder:false} };
+let cart = [];
+let activeCategory = 'Semua';
+let lapPeriod = 'week';
+let trxSortField = 'time', trxSortDir = 'desc';
+let lastTrx = null;
+let charts = {};
+let lapChartBar=null, lapChartPie=null, lapChartTop=null;
+let isSaving = false;
+
+// ═══════════════════════════════════════════════
+//  SEED DATA
+// ═══════════════════════════════════════════════
+const INIT_PRODUCTS = [
+  {id:'p1',name:'Pure Milk',category:'Susu Reguler',size:'Regular',price:8000,recommended:false,seasonal:false,active:true},
+  {id:'p2',name:'Pure Milk',category:'Susu Reguler',size:'Large',price:10000,recommended:false,seasonal:false,active:true},
+  {id:'p3',name:'Strawberry Delight',category:'Susu Reguler',size:'Regular',price:10000,recommended:true,seasonal:false,active:true},
+  {id:'p4',name:'Strawberry Delight',category:'Susu Reguler',size:'Large',price:13000,recommended:true,seasonal:false,active:true},
+  {id:'p5',name:'Rich Choco',category:'Susu Reguler',size:'Regular',price:10000,recommended:false,seasonal:false,active:true},
+  {id:'p6',name:'Rich Choco',category:'Susu Reguler',size:'Large',price:13000,recommended:false,seasonal:false,active:true},
+  {id:'p7',name:'Vanilla Delight',category:'Susu Reguler',size:'Regular',price:10000,recommended:false,seasonal:false,active:true},
+  {id:'p8',name:'Vanilla Delight',category:'Susu Reguler',size:'Large',price:13000,recommended:false,seasonal:false,active:true},
+  {id:'p9',name:'Susu Thai Tea',category:'Susu Reguler',size:'Regular',price:13000,recommended:false,seasonal:false,active:true},
+  {id:'p10',name:'Susu Thai Tea',category:'Susu Reguler',size:'Large',price:16000,recommended:false,seasonal:false,active:true},
+  {id:'p11',name:'Salted Caramel',category:'Susu Reguler',size:'Regular',price:14000,recommended:false,seasonal:false,active:true},
+  {id:'p12',name:'Salted Caramel',category:'Susu Reguler',size:'Large',price:16000,recommended:false,seasonal:false,active:true},
+  {id:'p13',name:'Sea Salt',category:'Susu Reguler',size:'Regular',price:10000,recommended:false,seasonal:false,active:true},
+  {id:'p14',name:'Sea Salt',category:'Susu Reguler',size:'Large',price:12000,recommended:false,seasonal:false,active:true},
+  {id:'p15',name:'Garam & Madu (Real Honey)',category:'Susu Reguler',size:'Regular',price:15000,recommended:false,seasonal:false,active:true},
+  {id:'p16',name:'Garam & Madu (Real Honey)',category:'Susu Reguler',size:'Large',price:18000,recommended:false,seasonal:false,active:true},
+  {id:'p17',name:'Susu Energy (Kukubima)',category:'Susu Reguler',size:'Single',price:12000,recommended:false,seasonal:false,active:true},
+  {id:'p18',name:'Green Tea Latte',category:'Susu Reguler',size:'Regular',price:12000,recommended:false,seasonal:true,active:true},
+  {id:'p19',name:'Green Tea Latte',category:'Susu Reguler',size:'Large',price:15000,recommended:false,seasonal:true,active:true},
+  {id:'p20',name:'Cookies & Milk Oreo',category:'Cookies & Milk',size:'Regular',price:13000,recommended:false,seasonal:false,active:true},
+  {id:'p21',name:'Cookies & Milk Oreo',category:'Cookies & Milk',size:'Large',price:15000,recommended:false,seasonal:false,active:true},
+  {id:'p22',name:'Cookies & Milk Marie Regal',category:'Cookies & Milk',size:'Regular',price:13000,recommended:false,seasonal:false,active:true},
+  {id:'p23',name:'Cookies & Milk Marie Regal',category:'Cookies & Milk',size:'Large',price:15000,recommended:false,seasonal:false,active:true},
+  {id:'p24',name:'Lotus Biscoff',category:'Cookies & Milk',size:'Single',price:18000,recommended:false,seasonal:false,active:true},
+  {id:'p25',name:'Strawberry Reserve',category:'Reserve Series',size:'Single',price:15000,recommended:false,seasonal:false,active:true},
+  {id:'p26',name:'Cocoa Reserve',category:'Reserve Series',size:'Single',price:15000,recommended:true,seasonal:false,active:true},
+  {id:'p27',name:'Upgrade ke Oatmilk',category:'Add-on',size:'Regular',price:2000,recommended:false,seasonal:false,active:true},
+  {id:'p28',name:'Upgrade ke Oatmilk',category:'Add-on',size:'Large',price:4000,recommended:false,seasonal:false,active:true},
+];
+const INIT_STOCK = [
+  {id:'s1',name:'Susu Segar',unit:'Liter',qty:15,threshold:5},
+  {id:'s2',name:'Gula Pasir',unit:'Kg',qty:8,threshold:2},
+  {id:'s3',name:'Es Batu',unit:'Kg',qty:10,threshold:3},
+  {id:'s4',name:'Cup Regular 12oz',unit:'pcs',qty:200,threshold:50},
+  {id:'s5',name:'Cup Large 16oz/18oz',unit:'pcs',qty:150,threshold:50},
+  {id:'s6',name:'Sedotan',unit:'pcs',qty:300,threshold:100},
+  {id:'s7',name:'Strawberry Powder',unit:'Kg',qty:2,threshold:0.5},
+  {id:'s8',name:'Cocoa Powder',unit:'Kg',qty:1.5,threshold:0.5},
+  {id:'s9',name:'Matcha Powder',unit:'Kg',qty:0.3,threshold:0.3},
+  {id:'s10',name:'Vanilla Syrup',unit:'Liter',qty:1.2,threshold:0.5},
+  {id:'s11',name:'Oatmilk',unit:'Liter',qty:3,threshold:1},
+  {id:'s12',name:'Lotus Biscoff',unit:'pcs',qty:8,threshold:10},
+  {id:'s13',name:'Oreo Crushed',unit:'Kg',qty:1,threshold:0.3},
+  {id:'s14',name:'Marie Regal Crushed',unit:'Kg',qty:0.8,threshold:0.3},
+];
+
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function generateDummy(){
+  const pop=['p3','p4','p26','p5','p6','p9','p20','p11','p3','p4','p26','p4'];
+  const all=INIT_PRODUCTS.map(p=>p.id);
+  const trxs=[]; const today=new Date();
+  for(let d=29;d>=0;d--){
+    const date=new Date(today); date.setDate(today.getDate()-d);
+    const ds=date.toISOString().split('T')[0];
+    const isWE=date.getDay()===0||date.getDay()===6;
+    const cnt=isWE?rnd(12,25):rnd(5,18);
+    for(let t=0;t<cnt;t++){
+      const hp=[11,11,11,12,12,12,15,15,16,16,10,13,14,17,9];
+      const h=hp[rnd(0,hp.length-1)], m=rnd(0,59);
+      const items=[]; const ic=rnd(1,4);
+      for(let i=0;i<ic;i++){
+        const pid=Math.random()<0.65?pop[rnd(0,pop.length-1)]:all[rnd(0,all.length-1)];
+        const prod=INIT_PRODUCTS.find(p=>p.id===pid); if(!prod)continue;
+        const qty=rnd(1,3);
+        const ex=items.find(x=>x.productId===pid);
+        if(ex)ex.qty+=qty; else items.push({productId:pid,name:prod.name+' ('+prod.size+')',price:prod.price,qty});
+      }
+      if(!items.length)continue;
+      const total=items.reduce((s,i)=>s+i.price*i.qty,0);
+      trxs.push({id:'trx-'+ds+'-'+t,date:ds,time:String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'),items,total,timestamp:new Date(date.getFullYear(),date.getMonth(),date.getDate(),h,m).toISOString()});
+    }
+  }
+  return trxs;
+}
+
+// ═══════════════════════════════════════════════
+//  FIREBASE STORAGE LAYER
+// ═══════════════════════════════════════════════
+function setSyncStatus(status){
+  const dot=document.getElementById('sync-dot');
+  const txt=document.getElementById('sync-status');
+  if(!dot)return;
+  dot.className='';
+  if(status==='syncing'){dot.classList.add('syncing');if(txt)txt.textContent='Menyinkron…';}
+  else if(status==='error'){dot.classList.add('error');if(txt)txt.textContent='Error sinkron';}
+  else{if(txt)txt.textContent='Tersinkron '+(new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}));}
+}
+
+async function loadDB(){
+  setLoading(true,'Menghubungkan ke Firebase…');
+  try{
+    setLoading(true,'Memuat produk & stok…');
+    const snap = await CONFIG_REF.get();
+    if(!snap.exists){
+      setLoading(true,'Pertama kali? Menyiapkan data awal…');
+      DB.products=JSON.parse(JSON.stringify(INIT_PRODUCTS));
+      DB.stock=JSON.parse(JSON.stringify(INIT_STOCK));
+      DB.settings={storeName:'Galgah',waNumber:'',reminder:false};
+      await CONFIG_REF.set({products:DB.products,stock:DB.stock,settings:DB.settings});
+      setLoading(true,'Mengisi data demo transaksi…');
+      const dummy=generateDummy();
+      await seedTransactions(dummy);
+      DB.transactions=dummy;
+    } else {
+      const d=snap.data();
+      DB.products=d.products||JSON.parse(JSON.stringify(INIT_PRODUCTS));
+      DB.stock=d.stock||JSON.parse(JSON.stringify(INIT_STOCK));
+      DB.settings=d.settings||{storeName:'Galgah',waNumber:'',reminder:false};
+      setLoading(true,'Memuat riwayat transaksi…');
+      const trxSnap=await TRX_COLL.orderBy('timestamp','desc').get();
+      DB.transactions=trxSnap.docs.map(d=>d.data());
+    }
+    setSyncStatus('ok');
+    updateFBBadge(true);
+  }catch(err){
+    console.error('Firebase error:',err);
+    setSyncStatus('error');
+    updateFBBadge(false);
+    showToast('Gagal memuat data. Cek koneksi & Rules Firestore.','❌');
+    DB.products=JSON.parse(JSON.stringify(INIT_PRODUCTS));
+    DB.stock=JSON.parse(JSON.stringify(INIT_STOCK));
+    DB.settings={storeName:'Galgah',waNumber:'',reminder:false};
+    DB.transactions=[];
+  }
+  setLoading(false);
+}
+
+async function seedTransactions(trxs){
+  const BATCH=450;
+  for(let i=0;i<trxs.length;i+=BATCH){
+    const batch=db.batch();
+    trxs.slice(i,i+BATCH).forEach(t=>batch.set(TRX_COLL.doc(t.id),t));
+    await batch.commit();
+  }
+}
+
+async function saveConfig(){
+  setSyncStatus('syncing');
+  try{
+    await CONFIG_REF.set({products:DB.products,stock:DB.stock,settings:DB.settings});
+    setSyncStatus('ok');
+  }catch(e){
+    console.error(e);setSyncStatus('error');
+    showToast('Gagal menyimpan ke Firebase','❌');
+  }
+}
+
+async function addTransactionToDB(trx){
+  setSyncStatus('syncing');
+  try{
+    await TRX_COLL.doc(trx.id).set(trx);
+    setSyncStatus('ok');
+  }catch(e){
+    console.error(e);setSyncStatus('error');
+    showToast('Transaksi tersimpan lokal, gagal sync','⚠️');
+  }
+}
+
+async function confirmResetData(){
+  if(!confirm('⚠️ Hapus SEMUA data Galgah di Firebase?'))return;
+  if(!confirm('Yakin? Semua transaksi, produk, dan stok akan hilang.'))return;
+  setLoading(true,'Menghapus data…');
+  try{
+    const snap=await TRX_COLL.get();
+    for(let i=0;i<snap.docs.length;i+=450){
+      const batch=db.batch();
+      snap.docs.slice(i,i+450).forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+    await CONFIG_REF.delete();
+    setLoading(false);
+    showToast('Semua data dihapus. Reload halaman…','🗑️');
+    setTimeout(()=>location.reload(),2000);
+  }catch(e){
+    setLoading(false);console.error(e);
+    showToast('Gagal menghapus data','❌');
+  }
+}
+
+function updateFBBadge(ok){
+  const b=document.getElementById('fb-status-badge');
+  if(!b)return;
+  b.textContent=ok?'Terhubung':'Offline';
+  b.style.background=ok?'#dcfce7':'#fee2e2';
+  b.style.color=ok?'#166534':'#dc2626';
+}
+
+// ═══════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════
+function formatRp(n){return 'Rp '+Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function showToast(msg,icon='✅'){
+  document.getElementById('toast-msg').textContent=msg;
+  document.getElementById('toast-icon').textContent=icon;
+  const t=document.getElementById('toast'); t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3200);
+}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function setLoading(show,text='Memuat…'){
+  const ol=document.getElementById('loading-overlay');
+  const lt=document.getElementById('loading-text');
+  if(ol) ol.classList.toggle('hidden',!show);
+  if(lt&&text) lt.textContent=text;
+}
+
+// ═══════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════
+function navigate(page,el){
+  document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.style.color='';n.style.background='';if(!n.classList.contains('active'))n.classList.add('text-gray-600');});
+  const tgt=el||document.querySelector(`.nav-item[onclick*="'${page}'"]`);
+  if(tgt){tgt.classList.add('active');tgt.classList.remove('text-gray-600');}
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pe=document.getElementById('page-'+page);
+  if(pe)pe.classList.add('active');
+  const titles={dashboard:'Dashboard',kasir:'Kasir',menu:'Menu & Produk',stok:'Stok & Bahan Baku',laporan:'Laporan & Analitik',settings:'Pengaturan'};
+  document.getElementById('page-title').textContent=titles[page]||page;
+  document.getElementById('page-sub').textContent=new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+  closeMobileSidebar();
+  if(page==='dashboard')refreshDashboard();
+  else if(page==='kasir')renderKasir();
+  else if(page==='menu')renderMenuTable();
+  else if(page==='stok')renderStok();
+  else if(page==='laporan')refreshLaporan();
+  else if(page==='settings')loadSettings();
+  return false;
+}
+function toggleMobileSidebar(){document.getElementById('sidebar').classList.toggle('mobile-open');document.getElementById('sidebar-overlay').classList.toggle('hidden');}
+function closeMobileSidebar(){document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebar-overlay').classList.add('hidden');}
+
+// ═══════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════
+function refreshDashboard(){
+  const h=new Date().getHours();
+  const g=h<11?'Selamat Pagi ☀️':h<15?'Selamat Siang 🌤️':h<18?'Selamat Sore 🌇':'Selamat Malam 🌙';
+  document.getElementById('greeting-text').textContent=g+', Tim Galgah!';
+  document.getElementById('greeting-date').textContent=new Date().toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  document.getElementById('page-sub').textContent=new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+
+  const today=todayStr();
+  const tt=DB.transactions.filter(t=>t.date===today);
+  const rev=tt.reduce((s,t)=>s+t.total,0), avg=tt.length?rev/tt.length:0;
+  document.getElementById('stat-revenue').textContent=formatRp(rev);
+  document.getElementById('stat-trx').textContent=tt.length;
+  document.getElementById('stat-avg').textContent=formatRp(avg);
+
+  const pc={};
+  tt.forEach(t=>t.items.forEach(i=>{pc[i.name]=(pc[i.name]||0)+i.qty;}));
+  const best=Object.entries(pc).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('stat-bestseller').textContent=best?best[0]:'—';
+
+  // 7-day chart
+  const lbs=[],dt=[];
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const ds=d.toISOString().split('T')[0];lbs.push(d.toLocaleDateString('id-ID',{weekday:'short',day:'numeric'}));dt.push(DB.transactions.filter(t=>t.date===ds).reduce((s,t)=>s+t.total,0));}
+  if(charts['chart-revenue-7d'])charts['chart-revenue-7d'].destroy();
+  const ctx=document.getElementById('chart-revenue-7d');
+  if(ctx)charts['chart-revenue-7d']=new Chart(ctx,{type:'bar',data:{labels:lbs,datasets:[{label:'Revenue',data:dt,backgroundColor:'#F9B8C4',borderColor:'#8B2252',borderWidth:2,borderRadius:8,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>formatRp(c.raw)}}},scales:{y:{ticks:{callback:v=>formatRp(v),font:{size:10}},grid:{color:'#fde8ed'}},x:{grid:{display:false},ticks:{font:{size:10}}}}}});
+
+  const rec=[...DB.transactions].sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).slice(0,5);
+  const rc=document.getElementById('recent-transactions');
+  if(!rec.length){rc.innerHTML='<p class="text-center text-gray-400 text-sm py-6">Belum ada transaksi</p>';}
+  else rc.innerHTML=rec.map(t=>`<div class="flex items-center justify-between py-2.5 border-b last:border-0" style="border-color:#fde8ed"><div class="flex-1 min-w-0 pr-2"><p class="text-xs font-semibold text-gray-700 truncate">${t.items.map(i=>i.name).join(', ')}</p><p class="text-xs text-gray-400 mt-0.5">${t.date} · ${t.time}</p></div><span class="text-xs font-bold flex-shrink-0" style="color:var(--rose)">${formatRp(t.total)}</span></div>`).join('');
+
+  const low=DB.stock.filter(s=>s.qty<=s.threshold);
+  if(low.length){document.getElementById('stock-alert-banner').classList.remove('hidden');document.getElementById('stock-alert-text').textContent=low.map(s=>`${s.name}: ${s.qty} ${s.unit}`).join(' · ');}
+  else document.getElementById('stock-alert-banner').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════
+//  KASIR
+// ═══════════════════════════════════════════════
+function renderKasir(){
+  const prods=DB.products.filter(p=>p.active);
+  const cats=['Semua',...new Set(prods.map(p=>p.category))];
+  document.getElementById('category-tabs').innerHTML=cats.map(c=>`<button onclick="setCategory('${c.replace(/'/g,"\\'")}')\" class="px-4 py-2 rounded-xl text-sm font-medium transition-all" style="${c===activeCategory?'background:var(--rose);color:white':'background:white;color:#6b7280;border:1px solid #fde8ed'}">${c}</button>`).join('');
+  renderProductGrid();renderCart();
+}
+function setCategory(cat){activeCategory=cat;renderKasir();}
+function renderProductGrid(){
+  const prods=DB.products.filter(p=>p.active&&(activeCategory==='Semua'||p.category===activeCategory));
+  const grid=document.getElementById('product-grid');
+  if(!prods.length){grid.innerHTML='<div class="col-span-3 text-center py-12 text-gray-400"><p class="text-4xl mb-2">🥛</p><p>Tidak ada produk</p></div>';return;}
+  grid.innerHTML=prods.map(p=>`<div class="product-card bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed" onclick="addToCart('${p.id}')"><div class="flex items-start justify-between mb-2"><div class="flex-1 pr-1"><p class="font-semibold text-gray-800 text-sm leading-tight">${p.name}</p><p class="text-xs text-gray-400 mt-0.5">${p.category}</p></div><div class="flex flex-col gap-1 items-end">${p.recommended?'<span class="badge-rec">⭐ Best</span>':''}${p.seasonal?'<span class="badge-sea">🍃</span>':''}</div></div><div class="flex items-center justify-between mt-3"><span class="text-xs px-2 py-1 rounded-lg font-medium" style="background:#fde8ed;color:var(--rose)">${p.size}</span><span class="font-extrabold text-sm" style="color:var(--rose)">${formatRp(p.price)}</span></div><div class="mt-3 w-full py-2 rounded-xl text-center text-xs font-semibold text-white" style="background:var(--rose)">+ Tambah</div></div>`).join('');
+}
+function addToCart(pid){const prod=DB.products.find(p=>p.id===pid);if(!prod)return;const ex=cart.find(c=>c.productId===pid);if(ex)ex.qty++;else cart.push({productId:pid,name:prod.name+' ('+prod.size+')',price:prod.price,qty:1});renderCart();showToast(prod.name+' ditambahkan!','🥛');}
+function renderCart(){
+  const container=document.getElementById('cart-items');
+  const empty=document.getElementById('cart-empty');
+  Array.from(container.querySelectorAll('.cart-item')).forEach(e=>e.remove());
+  if(!cart.length){empty.style.display='';document.getElementById('cart-total').textContent='Rp 0';return;}
+  empty.style.display='none';
+  const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
+  cart.forEach(item=>{
+    const d=document.createElement('div');
+    d.className='cart-item border-b pb-3 mb-3 last:border-0 last:mb-0 last:pb-0';d.style.borderColor='#fde8ed';
+    d.innerHTML=`<div class="flex items-start justify-between gap-1"><p class="text-xs font-semibold text-gray-700 flex-1 leading-tight">${item.name}</p><button onclick="removeFromCart('${item.productId}')" class="text-xs flex-shrink-0 ml-1" style="color:#fca5a5" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#fca5a5'">✕</button></div><div class="flex items-center justify-between mt-2"><div class="flex items-center gap-2"><button onclick="changeQty('${item.productId}',-1)" class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold border" style="border-color:#e5e7eb">−</button><span class="text-sm font-bold w-5 text-center">${item.qty}</span><button onclick="changeQty('${item.productId}',1)" class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold border" style="border-color:#e5e7eb">+</button></div><span class="text-xs font-bold" style="color:var(--rose)">${formatRp(item.price*item.qty)}</span></div>`;
+    container.insertBefore(d,empty);
+  });
+  document.getElementById('cart-total').textContent=formatRp(total);
+}
+function changeQty(pid,d){const i=cart.find(c=>c.productId===pid);if(!i)return;i.qty+=d;if(i.qty<=0)removeFromCart(pid);else renderCart();}
+function removeFromCart(pid){cart=cart.filter(c=>c.productId!==pid);renderCart();}
+function resetCart(){cart=[];renderCart();showToast('Keranjang dikosongkan','🗑️');}
+
+async function processTransaction(){
+  if(!cart.length){showToast('Keranjang kosong!','⚠️');return;}
+  const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
+  const now=new Date();
+  lastTrx={id:'trx-'+Date.now(),date:now.toISOString().split('T')[0],time:now.toTimeString().slice(0,5),items:cart.map(i=>({...i})),total,timestamp:now.toISOString()};
+  DB.transactions.unshift(lastTrx); // add to front for recency
+  cart=[];renderCart();
+  document.getElementById('trx-success-amount').textContent=formatRp(total);
+  openModal('trx-success-modal');
+  await addTransactionToDB(lastTrx); // async save to Firebase
+}
+
+function sendTrxWA(){closeModal('trx-success-modal');if(!lastTrx)return;window.open('https://wa.me/'+DB.settings.waNumber+'?text='+encodeURIComponent(buildStruk(lastTrx)),'_blank');}
+function buildStruk(t){return['🐄 *GALGAH — Struk Digital*','📅 '+t.date+' · '+t.time,'━━━━━━━━━━━━━━━━',...t.items.map(i=>'• '+i.name+' x'+i.qty+' = '+formatRp(i.price*i.qty)),'━━━━━━━━━━━━━━━━','💰 *TOTAL: '+formatRp(t.total)+'*','','Terima kasih sudah mampir ke Galgah! 🥛','📍 RIK UI Canteen, Universitas Indonesia'].join('\n');}
+
+// ═══════════════════════════════════════════════
+//  MENU
+// ═══════════════════════════════════════════════
+function renderMenuTable(){
+  const q=(document.getElementById('menu-search')||{value:''}).value.toLowerCase();
+  const prods=DB.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
+  const tb=document.getElementById('menu-table-body');
+  if(!prods.length){tb.innerHTML='<tr><td colspan="6" class="text-center py-8 text-gray-400 text-sm">Tidak ada produk ditemukan</td></tr>';return;}
+  tb.innerHTML=prods.map(p=>`<tr class="border-t hover:bg-gray-50" style="border-color:#fafafa"><td class="px-4 py-3"><div class="flex items-center gap-2 flex-wrap"><span class="font-medium text-gray-800 text-sm">${p.name}</span>${p.recommended?'<span class="badge-rec">⭐</span>':''}${p.seasonal?'<span class="badge-sea">🍃</span>':''}</div></td><td class="px-4 py-3 text-gray-500 text-sm">${p.category}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-lg text-xs font-medium" style="background:#fde8ed;color:var(--rose)">${p.size}</span></td><td class="px-4 py-3 font-semibold text-gray-700 text-sm">${formatRp(p.price)}</td><td class="px-4 py-3"><button onclick="toggleActive('${p.id}')" class="px-3 py-1 rounded-full text-xs font-semibold" style="${p.active?'background:#dcfce7;color:#166534':'background:#f3f4f6;color:#6b7280'}">${p.active?'Aktif':'Nonaktif'}</button></td><td class="px-4 py-3"><div class="flex gap-2"><button onclick="openProductModal('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#dbeafe;color:#1d4ed8">Edit</button><button onclick="deleteProduct('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#fee2e2;color:#dc2626">Hapus</button></div></td></tr>`).join('');
+}
+async function toggleActive(id){const p=DB.products.find(p=>p.id===id);if(p){p.active=!p.active;renderMenuTable();await saveConfig();showToast(p.active?'Produk diaktifkan':'Produk dinonaktifkan','🔄');}}
+async function deleteProduct(id){const p=DB.products.find(p=>p.id===id);if(!p||!confirm(`Hapus "${p.name} (${p.size})"?`))return;DB.products=DB.products.filter(p=>p.id!==id);renderMenuTable();await saveConfig();showToast('Produk dihapus','🗑️');}
+
+function openProductModal(id){
+  document.getElementById('product-modal-title').textContent=id?'Edit Produk':'Tambah Produk';
+  if(id){const p=DB.products.find(p=>p.id===id);document.getElementById('pf-id').value=p.id;document.getElementById('pf-name').value=p.name;document.getElementById('pf-category').value=p.category;document.getElementById('pf-size').value=p.size;document.getElementById('pf-price').value=p.price;document.getElementById('pf-recommended').checked=p.recommended;document.getElementById('pf-seasonal').checked=p.seasonal;document.getElementById('pf-active').checked=p.active;}
+  else{document.getElementById('pf-id').value='';document.getElementById('product-form').reset();document.getElementById('pf-active').checked=true;}
+  openModal('product-modal');
+}
+async function saveProduct(e){
+  e.preventDefault();
+  const id=document.getElementById('pf-id').value;
+  const data={id:id||'p-'+Date.now(),name:document.getElementById('pf-name').value,category:document.getElementById('pf-category').value,size:document.getElementById('pf-size').value,price:parseInt(document.getElementById('pf-price').value),recommended:document.getElementById('pf-recommended').checked,seasonal:document.getElementById('pf-seasonal').checked,active:document.getElementById('pf-active').checked};
+  if(id){const i=DB.products.findIndex(p=>p.id===id);DB.products[i]=data;}else DB.products.push(data);
+  closeModal('product-modal');renderMenuTable();
+  await saveConfig();showToast(id?'Produk diperbarui':'Produk ditambahkan','✅');
+}
+
+// ═══════════════════════════════════════════════
+//  STOK
+// ═══════════════════════════════════════════════
+function renderStok(){
+  document.getElementById('stok-grid').innerHTML=DB.stock.map(s=>{
+    const r=s.qty/(s.threshold||1);
+    const st=s.qty<=s.threshold?'red':r<=2?'yellow':'green';
+    const stc={red:'#dc2626',yellow:'#ca8a04',green:'#16a34a'};
+    const stb={red:'#fee2e2',yellow:'#fef9c3',green:'#dcfce7'};
+    const stl={red:'Kritis 🔴',yellow:'Hampir Habis 🟡',green:'Aman 🟢'};
+    return `<div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid ${stc[st]}44"><div class="flex items-start justify-between mb-3"><div><h5 class="font-bold text-gray-800 text-sm">${s.name}</h5><p class="text-xs text-gray-400 mt-0.5">Min: ${s.threshold} ${s.unit}</p></div><span class="text-xs font-semibold px-2 py-1 rounded-full" style="background:${stb[st]};color:${stc[st]}">${stl[st]}</span></div><div class="flex items-end justify-between mb-3"><div><p class="text-3xl font-extrabold" style="color:${stc[st]}">${s.qty}</p><p class="text-xs text-gray-400">${s.unit}</p></div><button onclick="editThreshold('${s.id}')" class="text-xs px-3 py-1.5 rounded-lg border text-gray-500" style="border-color:#e5e7eb">Set Min</button></div><div class="bg-gray-100 rounded-full h-2"><div class="h-2 rounded-full" style="width:${Math.min(100,r*50)}%;background:${stc[st]};transition:width 0.5s"></div></div></div>`;
+  }).join('');
+}
+async function editThreshold(id){const s=DB.stock.find(s=>s.id===id);if(!s)return;const v=prompt(`Set threshold minimum untuk ${s.name} (${s.unit}):`,s.threshold);if(v!==null&&!isNaN(parseFloat(v))){s.threshold=parseFloat(v);renderStok();await saveConfig();showToast('Threshold diperbarui','📦');}}
+function openRestockModal(){document.getElementById('restock-form-body').innerHTML=DB.stock.map(s=>`<div class="flex items-center gap-3"><label class="flex-1 text-sm font-medium text-gray-700">${s.name} <span class="text-xs text-gray-400">(${s.qty} ${s.unit})</span></label><input type="number" id="rs-${s.id}" min="0" step="0.01" placeholder="Tambah" class="w-24 px-3 py-2 rounded-xl border text-sm text-right" style="border-color:#fde8ed"/><span class="text-xs text-gray-400 w-8">${s.unit}</span></div>`).join('');openModal('restock-modal');}
+async function saveRestock(){let ch=0;DB.stock.forEach(s=>{const el=document.getElementById('rs-'+s.id);if(el&&el.value&&parseFloat(el.value)>0){s.qty=Math.round((s.qty+parseFloat(el.value))*100)/100;ch++;}});closeModal('restock-modal');renderStok();await saveConfig();showToast(ch?`${ch} bahan baku diperbarui`:'Tidak ada perubahan',ch?'📦':'⚠️');}
+
+// ═══════════════════════════════════════════════
+//  LAPORAN
+// ═══════════════════════════════════════════════
+function setLapPeriod(p){
+  lapPeriod=p;
+  ['week','month','custom'].forEach(x=>{const b=document.getElementById('btn-'+x);if(!b)return;if(x===p){b.style.background='var(--rose)';b.style.color='white';b.className=b.className.replace(/bg-gray-100|text-gray-600/g,'');}else{b.style.background='';b.style.color='';if(!b.className.includes('bg-gray-100'))b.className+=' bg-gray-100 text-gray-600';}});
+  document.getElementById('custom-date-range').classList.toggle('hidden',p!=='custom');
+  if(p!=='custom')refreshLaporan();
+}
+function getDateRange(){const t=new Date(),ts=t.toISOString().split('T')[0];if(lapPeriod==='week'){const f=new Date(t);f.setDate(t.getDate()-6);return[f.toISOString().split('T')[0],ts];}if(lapPeriod==='month'){const f=new Date(t);f.setDate(1);return[f.toISOString().split('T')[0],ts];}return[document.getElementById('lap-date-from').value||ts,document.getElementById('lap-date-to').value||ts];}
+function refreshLaporan(){
+  const [from,to]=getDateRange();
+  const trxs=DB.transactions.filter(t=>t.date>=from&&t.date<=to);
+  const rev=trxs.reduce((s,t)=>s+t.total,0),avg=trxs.length?rev/trxs.length:0;
+  document.getElementById('lap-total-rev').textContent=formatRp(rev);
+  document.getElementById('lap-total-trx').textContent=trxs.length;
+  document.getElementById('lap-avg-order').textContent=formatRp(avg);
+  const days=[],cur=new Date(from),end=new Date(to);
+  while(cur<=end){days.push(cur.toISOString().split('T')[0]);cur.setDate(cur.getDate()+1);}
+  const dlbls=days.map(d=>{const dt=new Date(d);return dt.toLocaleDateString('id-ID',{day:'numeric',month:'short'});});
+  const ddata=days.map(d=>trxs.filter(t=>t.date===d).reduce((s,t)=>s+t.total,0));
+  if(lapChartBar){lapChartBar.destroy();lapChartBar=null;}
+  const c1=document.getElementById('chart-lap-daily');
+  if(c1)lapChartBar=new Chart(c1,{type:'bar',data:{labels:dlbls,datasets:[{label:'Revenue',data:ddata,backgroundColor:'#F9B8C4',borderColor:'#8B2252',borderWidth:2,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>formatRp(c.raw)}}},scales:{y:{ticks:{callback:v=>formatRp(v),font:{size:9}},grid:{color:'#fde8ed'}},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  const catRev={};
+  trxs.forEach(t=>t.items.forEach(i=>{const p=DB.products.find(p=>p.id===i.productId);const cat=p?p.category:'Lainnya';catRev[cat]=(catRev[cat]||0)+i.price*i.qty;}));
+  if(lapChartPie){lapChartPie.destroy();lapChartPie=null;}
+  const c2=document.getElementById('chart-lap-pie');
+  if(c2)lapChartPie=new Chart(c2,{type:'pie',data:{labels:Object.keys(catRev),datasets:[{data:Object.values(catRev),backgroundColor:['#F9B8C4','#8B2252','#FFD700','#4CAF50','#2196F3'],borderWidth:3,borderColor:'white'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>c.label+': '+formatRp(c.raw)}}}}});
+  const pc={};
+  trxs.forEach(t=>t.items.forEach(i=>{pc[i.name]=(pc[i.name]||0)+i.qty;}));
+  const top=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if(lapChartTop){lapChartTop.destroy();lapChartTop=null;}
+  const c3=document.getElementById('chart-lap-top');
+  if(c3)lapChartTop=new Chart(c3,{type:'bar',data:{labels:top.map(p=>p[0]),datasets:[{label:'Qty',data:top.map(p=>p[1]),backgroundColor:'#8B2252',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:'#fde8ed'},ticks:{font:{size:9}}},y:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  const sorted=[...trxs].sort((a,b)=>{const va=trxSortField==='total'?a.total:a.timestamp,vb=trxSortField==='total'?b.total:b.timestamp;return trxSortDir==='desc'?(vb>va?1:-1):(va>vb?1:-1);});
+  const tb=document.getElementById('lap-trx-table');
+  if(!sorted.length){tb.innerHTML='<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">Tidak ada transaksi dalam periode ini</td></tr>';return;}
+  tb.innerHTML=sorted.map(t=>`<tr class="border-t hover:bg-gray-50" style="border-color:#fafafa"><td class="px-4 py-3 text-xs text-gray-500">${t.date} ${t.time}</td><td class="px-4 py-3 text-xs text-gray-700" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.items.map(i=>i.name).join(', ')}</td><td class="px-4 py-3 font-semibold text-xs" style="color:var(--rose)">${formatRp(t.total)}</td><td class="px-4 py-3 text-xs text-gray-400">${t.items.reduce((s,i)=>s+i.qty,0)} item</td></tr>`).join('');
+}
+function sortTrx(f){if(trxSortField===f)trxSortDir=trxSortDir==='asc'?'desc':'asc';else{trxSortField=f;trxSortDir='desc';}refreshLaporan();}
+
+// ═══════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════
+function loadSettings(){
+  document.getElementById('setting-store-name').value=DB.settings.storeName||'Galgah';
+  document.getElementById('setting-wa-number').value=DB.settings.waNumber||'';
+  document.getElementById('setting-reminder').checked=!!DB.settings.reminder;
+  const tt=document.getElementById('toggle-track');
+  if(tt)tt.style.background=DB.settings.reminder?'var(--rose)':'';
+  updateFBBadge(true);
+}
+async function saveSettings(){
+  DB.settings.storeName=document.getElementById('setting-store-name').value||'Galgah';
+  DB.settings.waNumber=document.getElementById('setting-wa-number').value.replace(/\D/g,'');
+  DB.settings.reminder=document.getElementById('setting-reminder').checked;
+  await saveConfig();
+  if(DB.settings.reminder)scheduleReminder();
+  showToast('Pengaturan disimpan','✅');
+}
+document.addEventListener('change',e=>{if(e.target.id==='setting-reminder'){const tt=document.getElementById('toggle-track');if(tt)tt.style.background=e.target.checked?'var(--rose)':'';} });
+
+// ═══════════════════════════════════════════════
+//  WHATSAPP
+// ═══════════════════════════════════════════════
+function openWAModal(){
+  const today=todayStr(),tt=DB.transactions.filter(t=>t.date===today);
+  const rev=tt.reduce((s,t)=>s+t.total,0),avg=tt.length?rev/tt.length:0;
+  const pc={};tt.forEach(t=>t.items.forEach(i=>{pc[i.name]=(pc[i.name]||0)+i.qty;}));
+  const top3=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const dateStr=new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const sn=DB.settings.storeName||'Galgah';
+  const msg=['🐄 *Ringkasan Harian '+sn+'*','📅 '+dateStr,'','💰 *Revenue:* '+formatRp(rev),'🧾 *Transaksi:* '+tt.length,'📊 *Avg. Order:* '+formatRp(avg),'','🏆 *Top Produk:*',...(top3.length?top3.map((p,i)=>`${i+1}. ${p[0]} (${p[1]} pcs)`):['Belum ada']),'','📍 RIK UI Canteen — UI'].join('\n');
+  document.getElementById('wa-message-preview').textContent=msg;
+  openModal('wa-modal');
+}
+function sendWA(){window.open('https://wa.me/'+DB.settings.waNumber+'?text='+encodeURIComponent(document.getElementById('wa-message-preview').textContent),'_blank');closeModal('wa-modal');}
+function copyWA(){navigator.clipboard.writeText(document.getElementById('wa-message-preview').textContent).then(()=>showToast('Pesan disalin!','📋'));closeModal('wa-modal');}
+
+// ═══════════════════════════════════════════════
+//  PDF EXPORTS
+// ═══════════════════════════════════════════════
+function makePDFHeader(doc,title,sub){doc.setFillColor(139,34,82);doc.rect(0,0,210,38,'F');doc.setFontSize(22);doc.setTextColor(255,255,255);doc.setFont(undefined,'bold');doc.text('GALGAH',15,22);doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text(title,15,30);if(sub){doc.setFontSize(9);doc.setTextColor(249,184,196);doc.text(sub,15,36);}doc.setTextColor(60,60,60);}
+function exportDailyPDF(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
+  const today=todayStr(),tt=DB.transactions.filter(t=>t.date===today);
+  const rev=tt.reduce((s,t)=>s+t.total,0),avg=tt.length?rev/tt.length:0;
+  makePDFHeader(doc,'Laporan Harian',new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}));
+  let y=48;doc.setFontSize(9);doc.setTextColor(60,60,60);doc.setFont(undefined,'normal');
+  doc.text(`Revenue: ${formatRp(rev)}  ·  Transaksi: ${tt.length}  ·  Avg: ${formatRp(avg)}`,15,y);y+=12;
+  if(tt.length){doc.setFontSize(10);doc.setFont(undefined,'bold');doc.setTextColor(139,34,82);doc.text('Transaksi Hari Ini',15,y);y+=4;const rows=[];tt.forEach((t,i)=>t.items.forEach(it=>rows.push([i+1,t.time,it.name,it.qty,formatRp(it.price*it.qty)])));doc.autoTable({startY:y,head:[['No','Waktu','Produk','Qty','Total']],body:rows,headStyles:{fillColor:[139,34,82],textColor:255,fontStyle:'bold',fontSize:9},bodyStyles:{fontSize:8}});y=doc.lastAutoTable.finalY+10;}
+  const pc={};tt.forEach(t=>t.items.forEach(i=>{pc[i.name]=(pc[i.name]||0)+i.qty;}));const top=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if(top.length){doc.setFontSize(10);doc.setFont(undefined,'bold');doc.setTextColor(139,34,82);doc.text('Top Produk',15,y);y+=4;doc.autoTable({startY:y,head:[['Produk','Qty']],body:top,headStyles:{fillColor:[139,34,82],textColor:255,fontSize:9},bodyStyles:{fontSize:8}});y=doc.lastAutoTable.finalY+10;}
+  doc.setFontSize(7);doc.setTextColor(150);doc.text(`Dicetak dari Dashboard Galgah — ${new Date().toLocaleString('id-ID')}`,15,y);
+  doc.save(`Galgah_Laporan_${today}.pdf`);showToast('Laporan PDF berhasil diexport','🖨️');
+}
+function exportLaporanPDF(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();const [from,to]=getDateRange();
+  const trxs=DB.transactions.filter(t=>t.date>=from&&t.date<=to);const rev=trxs.reduce((s,t)=>s+t.total,0),avg=trxs.length?rev/trxs.length:0;
+  makePDFHeader(doc,'Laporan Periode',`${from} s/d ${to}`);
+  let y=48;doc.setFontSize(9);doc.setTextColor(60,60,60);doc.text(`Total Revenue: ${formatRp(rev)}  ·  Transaksi: ${trxs.length}  ·  Avg: ${formatRp(avg)}`,15,y);y+=12;
+  if(trxs.length){doc.setFontSize(10);doc.setFont(undefined,'bold');doc.setTextColor(139,34,82);doc.text('Riwayat Transaksi',15,y);y+=4;const rows=trxs.map((t,i)=>[i+1,t.date+' '+t.time,t.items.map(it=>it.name).join(', ').substring(0,50),t.items.reduce((s,it)=>s+it.qty,0),formatRp(t.total)]);doc.autoTable({startY:y,head:[['No','Waktu','Produk','Items','Total']],body:rows,headStyles:{fillColor:[139,34,82],textColor:255,fontStyle:'bold',fontSize:9},bodyStyles:{fontSize:7},columnStyles:{1:{cellWidth:28},2:{cellWidth:70}}});y=doc.lastAutoTable.finalY+10;}
+  const pc={};trxs.forEach(t=>t.items.forEach(i=>{pc[i.name]=(pc[i.name]||0)+i.qty;}));const top=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  if(top.length){doc.setFontSize(10);doc.setFont(undefined,'bold');doc.setTextColor(139,34,82);doc.text('Top 10 Produk',15,y);y+=4;doc.autoTable({startY:y,head:[['Produk','Qty']],body:top,headStyles:{fillColor:[139,34,82],textColor:255,fontSize:9},bodyStyles:{fontSize:8}});y=doc.lastAutoTable.finalY+10;}
+  doc.setFontSize(7);doc.setTextColor(150);doc.text(`Dicetak dari Dashboard Galgah — ${new Date().toLocaleString('id-ID')}`,15,y);
+  doc.save(`Galgah_Laporan_${from}_${to}.pdf`);showToast('Laporan periode PDF berhasil diexport','📄');
+}
+function exportStokPDF(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
+  makePDFHeader(doc,'Daftar Stok Bahan Baku',`Dicetak: ${new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})}`);
+  const rows=DB.stock.map(s=>{const st=s.qty<=s.threshold?'KRITIS':s.qty<=s.threshold*2?'HAMPIR HABIS':'AMAN';return[s.name,s.qty+' '+s.unit,s.threshold+' '+s.unit,st];});
+  doc.autoTable({startY:44,head:[['Bahan Baku','Stok Saat Ini','Threshold','Status']],body:rows,headStyles:{fillColor:[139,34,82],textColor:255,fontStyle:'bold',fontSize:9},bodyStyles:{fontSize:8},didParseCell:data=>{if(data.section==='body'&&data.column.index===3){if(data.cell.raw==='KRITIS')data.cell.styles.textColor=[220,38,38];else if(data.cell.raw==='HAMPIR HABIS')data.cell.styles.textColor=[202,138,4];else data.cell.styles.textColor=[22,163,74];data.cell.styles.fontStyle='bold';}}});
+  const y=doc.lastAutoTable.finalY+10;doc.setFontSize(7);doc.setTextColor(150);doc.text(`Dicetak dari Dashboard Galgah — ${new Date().toLocaleString('id-ID')}`,15,y);
+  doc.save(`Galgah_Stok_${todayStr()}.pdf`);showToast('PDF stok berhasil diexport','📄');
+}
+function exportCSV(){
+  const [from,to]=getDateRange();const trxs=DB.transactions.filter(t=>t.date>=from&&t.date<=to);
+  const rows=[['No','Tanggal','Waktu','Produk','Qty','Harga Satuan','Subtotal']];
+  trxs.forEach((t,i)=>t.items.forEach(it=>rows.push([i+1,t.date,t.time,it.name,it.qty,it.price,it.price*it.qty])));
+  const blob=new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`Galgah_Transaksi_${from}_${to}.csv`;a.click();
+  showToast('CSV berhasil diexport','📊');
+}
+
+// ═══════════════════════════════════════════════
+//  REMINDER
+// ═══════════════════════════════════════════════
+function scheduleReminder(){const now=new Date(),t=new Date(now);t.setHours(21,0,0,0);if(t<=now)t.setDate(t.getDate()+1);setTimeout(()=>{if(DB.settings&&DB.settings.reminder)openWAModal();},t-now);}
+
+// ═══════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async ()=>{
+  await loadDB();
+  refreshDashboard();
+  if(DB.settings&&DB.settings.reminder)scheduleReminder();
+});
+</script>
+</body>
+</html>
