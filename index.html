@@ -43,6 +43,10 @@
 
   .toast { position:fixed; bottom:80px; right:20px; z-index:9000; transform:translateX(130%); transition:transform 0.3s ease; }
   .toast.show { transform:translateX(0); }
+  @media (max-width:767px) {
+    .toast { bottom:auto; top:80px; right:12px; left:12px; transform:translateY(-120px); }
+    .toast.show { transform:translateY(0); }
+  }
   .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.2s; }
   .modal-backdrop.open { opacity:1; pointer-events:all; }
   .chart-container { position:relative; height:220px; }
