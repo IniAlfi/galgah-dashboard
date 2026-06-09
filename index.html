@@ -58,8 +58,29 @@
     #sidebar.mobile-open { transform:translateX(0); }
     #bottom-nav { display:flex !important; }
     #main-content { margin-left:0 !important; padding-bottom:70px; }
+    /* POS mobile: hide desktop cart, show bottom sheet */
+    #kasir-desktop-cart { display:none !important; }
+    #kasir-mobile-fab { display:flex !important; }
+    #kasir-bottom-sheet { display:flex !important; }
+    #product-grid { grid-template-columns: repeat(2, 1fr) !important; }
   }
   #bottom-nav { display:none; }
+
+  /* Cart bottom sheet (mobile) */
+  #kasir-mobile-fab { display:none; position:fixed; bottom:75px; left:0; right:0; z-index:90; padding:0 16px; }
+  #kasir-bottom-sheet {
+    display:none; position:fixed; inset:0; z-index:150;
+    flex-direction:column; justify-content:flex-end;
+  }
+  #kasir-sheet-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.4); }
+  #kasir-sheet-content {
+    position:relative; background:white; border-radius:20px 20px 0 0;
+    max-height:82vh; display:flex; flex-direction:column;
+    transform:translateY(100%); transition:transform 0.35s cubic-bezier(.32,.72,0,1);
+  }
+  #kasir-bottom-sheet.open #kasir-sheet-content { transform:translateY(0); }
+  #kasir-sheet-drag { width:40px; height:4px; background:#e5e7eb; border-radius:99px; margin:12px auto 4px; flex-shrink:0; }
+  #kasir-sheet-items { flex:1; overflow-y:auto; padding:0 16px 8px; }
   .product-card { transition:all 0.15s; cursor:pointer; }
   .product-card:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(139,34,82,0.15); }
   .product-card:active { transform:scale(0.97); }
@@ -196,11 +217,14 @@
     <!-- KASIR -->
     <div id="page-kasir" class="page">
       <div class="flex gap-5" style="min-height:70vh">
-        <div class="flex-1 overflow-y-auto">
-          <div id="category-tabs" class="mb-4 flex gap-2 flex-wrap"></div>
-          <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+        <!-- Product side -->
+        <div class="flex-1 min-w-0">
+          <div id="category-tabs" class="mb-4 flex gap-2 flex-wrap overflow-x-auto pb-1"></div>
+          <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 gap-3"></div>
         </div>
-        <div class="w-72 flex-shrink-0">
+
+        <!-- Desktop cart panel -->
+        <div id="kasir-desktop-cart" class="w-72 flex-shrink-0">
           <div class="bg-white rounded-2xl shadow-sm sticky top-20" style="border:1px solid #fde8ed">
             <div class="p-4 border-b flex items-center justify-between" style="border-color:#fde8ed">
               <h4 class="font-bold text-gray-700">🛒 Keranjang</h4>
@@ -216,6 +240,43 @@
               </div>
               <button onclick="processTransaction()" class="w-full py-3 rounded-xl text-white font-bold text-sm btn-rose">✅ Proses Transaksi</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile: FAB cart button -->
+      <div id="kasir-mobile-fab">
+        <button onclick="openMobileCart()" id="mobile-cart-btn"
+          class="w-full py-4 rounded-2xl text-white font-bold text-sm shadow-xl flex items-center justify-between px-5"
+          style="background:var(--rose)">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">🛒</span>
+            <span>Keranjang</span>
+            <span id="mobile-cart-count" class="bg-white text-xs font-extrabold px-2 py-0.5 rounded-full" style="color:var(--rose)">0</span>
+          </div>
+          <span id="mobile-cart-total-fab" class="font-extrabold">Rp 0</span>
+        </button>
+      </div>
+
+      <!-- Mobile: Bottom sheet cart -->
+      <div id="kasir-bottom-sheet" onclick="handleSheetBackdropClick(event)">
+        <div id="kasir-sheet-backdrop"></div>
+        <div id="kasir-sheet-content">
+          <div id="kasir-sheet-drag"></div>
+          <div class="px-4 pb-3 flex items-center justify-between border-b" style="border-color:#fde8ed">
+            <h4 class="font-bold text-gray-700">🛒 Keranjang</h4>
+            <button onclick="resetCart()" class="text-xs font-medium mr-3" style="color:#ef4444">Reset</button>
+            <button onclick="closeMobileCart()" class="text-gray-400 text-xl leading-none">✕</button>
+          </div>
+          <div id="kasir-sheet-items">
+            <!-- cart items mirrored here on mobile -->
+          </div>
+          <div class="p-4 border-t flex-shrink-0" style="border-color:#fde8ed">
+            <div class="flex justify-between items-center mb-3">
+              <span class="font-semibold text-gray-600">Total</span>
+              <span id="cart-total-mobile" class="font-extrabold text-xl" style="color:var(--rose)">Rp 0</span>
+            </div>
+            <button onclick="processTransaction()" class="w-full py-4 rounded-xl text-white font-bold btn-rose">✅ Proses Transaksi</button>
           </div>
         </div>
       </div>
@@ -558,15 +619,12 @@ async function loadDB(){
     setLoading(true,'Memuat produk & stok…');
     const snap = await CONFIG_REF.get();
     if(!snap.exists){
-      setLoading(true,'Pertama kali? Menyiapkan data awal…');
+      setLoading(true,'Menyiapkan data awal…');
       DB.products=JSON.parse(JSON.stringify(INIT_PRODUCTS));
       DB.stock=JSON.parse(JSON.stringify(INIT_STOCK));
       DB.settings={storeName:'Galgah',waNumber:'',reminder:false};
+      DB.transactions=[];
       await CONFIG_REF.set({products:DB.products,stock:DB.stock,settings:DB.settings});
-      setLoading(true,'Mengisi data demo transaksi…');
-      const dummy=generateDummy();
-      await seedTransactions(dummy);
-      DB.transactions=dummy;
     } else {
       const d=snap.data();
       DB.products=d.products||JSON.parse(JSON.stringify(INIT_PRODUCTS));
@@ -755,29 +813,93 @@ function addToCart(pid){const prod=DB.products.find(p=>p.id===pid);if(!prod)retu
 function renderCart(){
   const container=document.getElementById('cart-items');
   const empty=document.getElementById('cart-empty');
-  Array.from(container.querySelectorAll('.cart-item')).forEach(e=>e.remove());
-  if(!cart.length){empty.style.display='';document.getElementById('cart-total').textContent='Rp 0';return;}
-  empty.style.display='none';
-  const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
-  cart.forEach(item=>{
-    const d=document.createElement('div');
-    d.className='cart-item border-b pb-3 mb-3 last:border-0 last:mb-0 last:pb-0';d.style.borderColor='#fde8ed';
-    d.innerHTML=`<div class="flex items-start justify-between gap-1"><p class="text-xs font-semibold text-gray-700 flex-1 leading-tight">${item.name}</p><button onclick="removeFromCart('${item.productId}')" class="text-xs flex-shrink-0 ml-1" style="color:#fca5a5" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#fca5a5'">✕</button></div><div class="flex items-center justify-between mt-2"><div class="flex items-center gap-2"><button onclick="changeQty('${item.productId}',-1)" class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold border" style="border-color:#e5e7eb">−</button><span class="text-sm font-bold w-5 text-center">${item.qty}</span><button onclick="changeQty('${item.productId}',1)" class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold border" style="border-color:#e5e7eb">+</button></div><span class="text-xs font-bold" style="color:var(--rose)">${formatRp(item.price*item.qty)}</span></div>`;
-    container.insertBefore(d,empty);
-  });
-  document.getElementById('cart-total').textContent=formatRp(total);
+  if(container){
+    Array.from(container.querySelectorAll('.cart-item')).forEach(e=>e.remove());
+    if(!cart.length){
+      if(empty)empty.style.display='';
+      const ct=document.getElementById('cart-total');if(ct)ct.textContent='Rp 0';
+    } else {
+      if(empty)empty.style.display='none';
+      const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
+      cart.forEach(item=>{
+        const d=document.createElement('div');
+        d.className='cart-item border-b pb-3 mb-3 last:border-0 last:mb-0 last:pb-0';d.style.borderColor='#fde8ed';
+        d.innerHTML=`<div class="flex items-start justify-between gap-1"><p class="text-xs font-semibold text-gray-700 flex-1 leading-tight">${item.name}</p><button onclick="removeFromCart('${item.productId}')" class="text-xs flex-shrink-0 ml-1" style="color:#fca5a5" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#fca5a5'">✕</button></div><div class="flex items-center justify-between mt-2"><div class="flex items-center gap-2"><button onclick="changeQty('${item.productId}',-1)" class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold border" style="border-color:#e5e7eb">−</button><span class="text-sm font-bold w-5 text-center">${item.qty}</span><button onclick="changeQty('${item.productId}',1)" class="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold border" style="border-color:#e5e7eb">+</button></div><span class="text-xs font-bold" style="color:var(--rose)">${formatRp(item.price*item.qty)}</span></div>`;
+        container.insertBefore(d,empty);
+      });
+      const ct=document.getElementById('cart-total');if(ct)ct.textContent=formatRp(total);
+    }
+  }
+  // Update mobile FAB
+  const totalItems=cart.reduce((s,i)=>s+i.qty,0);
+  const totalPrice=cart.reduce((s,i)=>s+i.price*i.qty,0);
+  const cnt=document.getElementById('mobile-cart-count');
+  const fab=document.getElementById('mobile-cart-total-fab');
+  if(cnt)cnt.textContent=totalItems;
+  if(fab)fab.textContent=formatRp(totalPrice);
+  // If mobile sheet is open, re-render it too
+  const sheet=document.getElementById('kasir-bottom-sheet');
+  if(sheet&&sheet.classList.contains('open'))renderMobileCart();
 }
 function changeQty(pid,d){const i=cart.find(c=>c.productId===pid);if(!i)return;i.qty+=d;if(i.qty<=0)removeFromCart(pid);else renderCart();}
 function removeFromCart(pid){cart=cart.filter(c=>c.productId!==pid);renderCart();}
 function resetCart(){cart=[];renderCart();showToast('Keranjang dikosongkan','🗑️');}
+
+// Mobile cart bottom sheet
+function openMobileCart(){
+  const sheet=document.getElementById('kasir-bottom-sheet');
+  if(!sheet)return;
+  sheet.classList.add('open');
+  renderMobileCart();
+  document.body.style.overflow='hidden';
+}
+function closeMobileCart(){
+  const sheet=document.getElementById('kasir-bottom-sheet');
+  if(sheet)sheet.classList.remove('open');
+  document.body.style.overflow='';
+}
+function handleSheetBackdropClick(e){
+  if(e.target.id==='kasir-sheet-backdrop')closeMobileCart();
+}
+function renderMobileCart(){
+  const container=document.getElementById('kasir-sheet-items');
+  if(!container)return;
+  container.innerHTML='';
+  if(!cart.length){
+    container.innerHTML='<div class="text-center py-10 text-gray-400"><p class="text-4xl mb-2">🥛</p><p class="text-sm">Keranjang kosong</p></div>';
+    return;
+  }
+  const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
+  cart.forEach(item=>{
+    const d=document.createElement('div');
+    d.className='border-b py-3 last:border-0';
+    d.style.borderColor='#fde8ed';
+    d.innerHTML=`
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm font-semibold text-gray-700 flex-1 leading-tight">${item.name}</p>
+        <button onclick="removeFromCart('${item.productId}');renderMobileCart()" class="text-red-300 text-sm ml-1">✕</button>
+      </div>
+      <div class="flex items-center justify-between mt-2">
+        <div class="flex items-center gap-3">
+          <button onclick="changeQty('${item.productId}',-1);renderMobileCart()" class="w-8 h-8 rounded-full border flex items-center justify-center text-base font-bold" style="border-color:#fde8ed">−</button>
+          <span class="text-base font-bold w-6 text-center">${item.qty}</span>
+          <button onclick="changeQty('${item.productId}',1);renderMobileCart()" class="w-8 h-8 rounded-full border flex items-center justify-center text-base font-bold" style="border-color:#fde8ed">+</button>
+        </div>
+        <span class="font-bold text-sm" style="color:var(--rose)">${formatRp(item.price*item.qty)}</span>
+      </div>`;
+    container.appendChild(d);
+  });
+  const mt=document.getElementById('cart-total-mobile');
+  if(mt)mt.textContent=formatRp(total);
+}
 
 async function processTransaction(){
   if(!cart.length){showToast('Keranjang kosong!','⚠️');return;}
   const total=cart.reduce((s,i)=>s+i.price*i.qty,0);
   const now=new Date();
   lastTrx={id:'trx-'+Date.now(),date:now.toISOString().split('T')[0],time:now.toTimeString().slice(0,5),items:cart.map(i=>({...i})),total,timestamp:now.toISOString()};
-  DB.transactions.unshift(lastTrx); // add to front for recency
-  cart=[];renderCart();
+  DB.transactions.unshift(lastTrx);
+  cart=[];renderCart();closeMobileCart();
   document.getElementById('trx-success-amount').textContent=formatRp(total);
   openModal('trx-success-modal');
   await addTransactionToDB(lastTrx); // async save to Firebase
