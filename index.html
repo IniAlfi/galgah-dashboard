@@ -112,12 +112,17 @@
 <!-- SIDEBAR -->
 <aside id="sidebar" class="sidebar fixed left-0 top-0 h-full w-64 bg-white shadow-xl z-50 flex flex-col">
   <div class="p-5 border-b" style="border-color:#fde8ed">
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-3 mb-4">
       <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl" style="background:var(--rose)">🐄</div>
       <div>
         <h1 class="font-extrabold text-lg" style="color:var(--rose)">GALGAH</h1>
-        <p class="text-xs text-gray-400">RIK UI Canteen</p>
+        <p id="sidebar-branch-label" class="text-xs text-gray-400">RIK UI Canteen</p>
       </div>
+    </div>
+    <!-- Branch Switcher -->
+    <div class="rounded-xl p-1 flex gap-1" style="background:#fdf2f6">
+      <button id="branch-btn-rik" onclick="switchBranch('rik')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all" style="background:var(--rose);color:white">🏫 RIK UI</button>
+      <button id="branch-btn-fasilkom" onclick="switchBranch('fasilkom')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all text-gray-500">💻 Fasilkom</button>
     </div>
   </div>
   <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -157,7 +162,10 @@
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
       <div>
-        <h2 id="page-title" class="font-bold text-gray-800 text-base">Dashboard</h2>
+        <div class="flex items-center gap-2">
+          <h2 id="page-title" class="font-bold text-gray-800 text-base">Dashboard</h2>
+          <span id="branch-header-badge" class="text-xs font-semibold px-2 py-0.5 rounded-full hidden md:inline-block" style="background:#fde8ed;color:var(--rose)">RIK UI Canteen</span>
+        </div>
         <p id="page-sub" class="text-xs text-gray-400"></p>
       </div>
     </div>
@@ -542,12 +550,17 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const CONFIG_REF = db.collection('galgah').doc('config');
-const TRX_COLL   = db.collection('transactions');
+function getConfigRef(){ return db.collection('galgah-'+activeBranch).doc('config'); }
+function getTrxColl(){ return db.collection('transactions-'+activeBranch); }
+// Legacy aliases (updated dynamically)
+let CONFIG_REF = null;
+let TRX_COLL   = null;
+function refreshFirebaseRefs(){ CONFIG_REF=getConfigRef(); TRX_COLL=getTrxColl(); }
 
 // ═══════════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════════
+let activeBranch = localStorage.getItem('galgah_branch') || 'rik';
 let DB = { transactions:[], products:[], stock:[], settings:{storeName:'Galgah',waNumber:'',reminder:false} };
 let cart = [];
 let activeCategory = 'Semua';
@@ -636,6 +649,8 @@ function setSyncStatus(status){
 }
 
 async function loadDB(){
+  refreshFirebaseRefs();
+  updateBranchUI();
   setLoading(true,'Menghubungkan ke Firebase…');
   try{
     setLoading(true,'Memuat produk & stok…');
@@ -703,8 +718,9 @@ async function addTransactionToDB(trx){
 }
 
 async function confirmResetData(){
-  if(!confirm('⚠️ Hapus SEMUA data Galgah di Firebase?'))return;
-  if(!confirm('Yakin? Semua transaksi, produk, dan stok akan hilang.'))return;
+  const branchName=activeBranch==='rik'?'RIK UI':'Fasilkom';
+  if(!confirm(`⚠️ Hapus SEMUA data cabang ${branchName} di Firebase?`))return;
+  if(!confirm(`Yakin? Semua transaksi, produk, dan stok cabang ${branchName} akan hilang.`))return;
   setLoading(true,'Menghapus data…');
   try{
     const snap=await TRX_COLL.get();
@@ -775,6 +791,38 @@ function navigate(page,el){
 }
 function toggleMobileSidebar(){document.getElementById('sidebar').classList.toggle('mobile-open');document.getElementById('sidebar-overlay').classList.toggle('hidden');}
 function closeMobileSidebar(){document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebar-overlay').classList.add('hidden');}
+
+function updateBranchUI(){
+  const branches={rik:{label:'RIK UI Canteen',btnId:'branch-btn-rik'},fasilkom:{label:'Fasilkom UI',btnId:'branch-btn-fasilkom'}};
+  const lbl=document.getElementById('sidebar-branch-label');
+  if(lbl)lbl.textContent=branches[activeBranch]?.label||'';
+  Object.keys(branches).forEach(b=>{
+    const btn=document.getElementById(branches[b].btnId);
+    if(!btn)return;
+    if(b===activeBranch){btn.style.background='var(--rose)';btn.style.color='white';}
+    else{btn.style.background='';btn.style.color='#6b7280';}
+  });
+  // Update header subtitle
+  const sub=document.getElementById('branch-header-badge');
+  if(sub){sub.textContent=branches[activeBranch]?.label||'';}
+}
+
+async function switchBranch(branch){
+  if(branch===activeBranch)return;
+  activeBranch=branch;
+  localStorage.setItem('galgah_branch',branch);
+  cart=[];
+  // Reset chart instances so they get re-created
+  lapChartBar=null;lapChartPie=null;lapChartTop=null;lapChartHourly=null;
+  Object.keys(charts).forEach(k=>{try{charts[k].destroy();}catch(e){}});
+  charts={};
+  await loadDB();
+  // Refresh current page
+  const pages=['dashboard','kasir','menu','stok','laporan','settings'];
+  const activePage=pages.find(p=>document.getElementById('page-'+p)?.classList.contains('active'))||'dashboard';
+  navigate(activePage,null);
+  showToast(`Pindah ke cabang ${branch==='rik'?'RIK UI':'Fasilkom'}!`,'🏫');
+}
 
 // ═══════════════════════════════════════════════
 //  DASHBOARD
@@ -1289,6 +1337,7 @@ function scheduleReminder(){const now=new Date(),t=new Date(now);t.setHours(21,0
 //  INIT
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async ()=>{
+  updateBranchUI();
   await loadDB();
   refreshDashboard();
   if(DB.settings&&DB.settings.reminder)scheduleReminder();
