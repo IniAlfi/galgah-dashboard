@@ -300,7 +300,7 @@
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead><tr style="background:#fdf2f6" class="text-left text-xs uppercase tracking-wide text-gray-500 font-semibold">
-              <th class="px-4 py-3">Produk</th><th class="px-4 py-3">Kategori</th><th class="px-4 py-3">Ukuran</th><th class="px-4 py-3">Harga</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
+              <th class="px-4 py-3">Produk</th><th class="px-4 py-3">Kategori</th><th class="px-4 py-3">Ukuran</th><th class="px-4 py-3">Harga</th><th class="px-4 py-3">Resep</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
             </tr></thead>
             <tbody id="menu-table-body"></tbody>
           </table>
@@ -312,8 +312,9 @@
     <div id="page-stok" class="page">
       <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
         <h3 class="font-bold text-gray-700">Stok & Bahan Baku</h3>
-        <div class="flex gap-2">
-          <button onclick="openRestockModal()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">📥 Terima Stok</button>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="openStokModal(null)" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">+ Tambah Bahan</button>
+          <button onclick="openRestockModal()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📥 Terima Stok</button>
           <button onclick="exportStokPDF()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📄 Export PDF</button>
         </div>
       </div>
@@ -443,14 +444,21 @@
     <form id="product-form" class="space-y-4" onsubmit="saveProduct(event)">
       <input type="hidden" id="pf-id"/>
       <div><label class="block text-xs font-semibold text-gray-600 mb-1">Nama Produk *</label><input type="text" id="pf-name" required class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
-      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Kategori</label><select id="pf-category" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"><option>Susu Reguler</option><option>Cookies & Milk</option><option>Reserve Series</option><option>Add-on</option></select></div>
-      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Ukuran</label><select id="pf-size" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"><option>Regular</option><option>Large</option><option>Single</option></select></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Kategori</label><input type="text" id="pf-category" list="category-list" placeholder="cth: Susu Reguler" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/><datalist id="category-list"></datalist></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Ukuran / Varian</label><input type="text" id="pf-size" list="size-list" placeholder="cth: Regular, Large, Single" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/><datalist id="size-list"><option>Regular</option><option>Large</option><option>Single</option><option>250ml</option><option>500ml</option></datalist></div>
       <div><label class="block text-xs font-semibold text-gray-600 mb-1">Harga (Rp) *</label><input type="number" id="pf-price" required min="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
       <div class="flex gap-5">
         <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-recommended" class="rounded"/> Recommended ⭐</label>
         <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-seasonal" class="rounded"/> Seasonal 🍃</label>
       </div>
       <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-active" class="rounded" checked/> Aktif (tampil di Kasir)</label>
+      <!-- RECIPE SECTION -->
+      <div class="border-t pt-4" style="border-color:#fde8ed">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">🧪 Resep Bahan Baku <span class="font-normal text-gray-400">(opsional)</span></label>
+        <p class="text-xs text-gray-400 mb-3">Stok otomatis berkurang tiap kali produk ini terjual</p>
+        <div id="recipe-list" class="space-y-2 mb-2"></div>
+        <button type="button" onclick="addRecipeRow()" class="text-xs px-3 py-2 rounded-lg w-full text-center" style="border:1px dashed #fde8ed;color:var(--rose)">+ Tambah Bahan</button>
+      </div>
       <div class="flex gap-3 pt-2">
         <button type="button" onclick="closeModal('product-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
         <button type="submit" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">Simpan</button>
@@ -471,6 +479,27 @@
       <button onclick="closeModal('restock-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
       <button onclick="saveRestock()" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">✅ Simpan</button>
     </div>
+  </div>
+</div>
+
+<!-- Stok Item Modal -->
+<div id="stok-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="stok-modal-title" class="font-bold text-gray-800">Tambah Bahan Baku</h3>
+      <button onclick="closeModal('stok-modal')" class="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+    </div>
+    <form id="stok-form" class="space-y-4" onsubmit="saveStokItem(event)">
+      <input type="hidden" id="sf-id"/>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Nama Bahan *</label><input type="text" id="sf-name" required placeholder="cth: Susu Segar" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Satuan *</label><input type="text" id="sf-unit" required list="unit-list" placeholder="cth: Liter, Kg, pcs" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/><datalist id="unit-list"><option>Liter</option><option>mL</option><option>Kg</option><option>gram</option><option>pcs</option><option>botol</option><option>sachet</option></datalist></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Stok Awal</label><input type="number" id="sf-qty" min="0" step="any" placeholder="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Stok Minimum (threshold)</label><p class="text-xs text-gray-400 mb-1">Peringatan muncul kalau stok di bawah angka ini</p><input type="number" id="sf-threshold" min="0" step="any" placeholder="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal('stok-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
+        <button type="submit" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">Simpan</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -559,22 +588,7 @@ const INIT_PRODUCTS = [
   {id:'p27',name:'Upgrade ke Oatmilk',category:'Add-on',size:'Regular',price:2000,recommended:false,seasonal:false,active:true},
   {id:'p28',name:'Upgrade ke Oatmilk',category:'Add-on',size:'Large',price:4000,recommended:false,seasonal:false,active:true},
 ];
-const INIT_STOCK = [
-  {id:'s1',name:'Susu Segar',unit:'Liter',qty:15,threshold:5},
-  {id:'s2',name:'Gula Pasir',unit:'Kg',qty:8,threshold:2},
-  {id:'s3',name:'Es Batu',unit:'Kg',qty:10,threshold:3},
-  {id:'s4',name:'Cup Regular 12oz',unit:'pcs',qty:200,threshold:50},
-  {id:'s5',name:'Cup Large 16oz/18oz',unit:'pcs',qty:150,threshold:50},
-  {id:'s6',name:'Sedotan',unit:'pcs',qty:300,threshold:100},
-  {id:'s7',name:'Strawberry Powder',unit:'Kg',qty:2,threshold:0.5},
-  {id:'s8',name:'Cocoa Powder',unit:'Kg',qty:1.5,threshold:0.5},
-  {id:'s9',name:'Matcha Powder',unit:'Kg',qty:0.3,threshold:0.3},
-  {id:'s10',name:'Vanilla Syrup',unit:'Liter',qty:1.2,threshold:0.5},
-  {id:'s11',name:'Oatmilk',unit:'Liter',qty:3,threshold:1},
-  {id:'s12',name:'Lotus Biscoff',unit:'pcs',qty:8,threshold:10},
-  {id:'s13',name:'Oreo Crushed',unit:'Kg',qty:1,threshold:0.3},
-  {id:'s14',name:'Marie Regal Crushed',unit:'Kg',qty:0.8,threshold:0.3},
-];
+const INIT_STOCK = [];
 
 function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
 function generateDummy(){
@@ -937,10 +951,25 @@ async function processTransaction(){
   const now=new Date();
   lastTrx={id:'trx-'+Date.now(),date:now.toISOString().split('T')[0],time:now.toTimeString().slice(0,5),items:cart.map(i=>({...i})),total,timestamp:now.toISOString()};
   DB.transactions.unshift(lastTrx);
+  // Deduct stock based on recipe
+  let stockChanged=false;
+  cart.forEach(cartItem=>{
+    const prod=DB.products.find(p=>p.id===cartItem.productId);
+    if(prod&&prod.recipe&&prod.recipe.length){
+      prod.recipe.forEach(ing=>{
+        const s=DB.stock.find(s=>s.id===ing.stockId);
+        if(s&&ing.qty>0){
+          s.qty=Math.max(0,Math.round((s.qty-ing.qty*cartItem.qty)*1000)/1000);
+          stockChanged=true;
+        }
+      });
+    }
+  });
   cart=[];renderCart();closeMobileCart();
   document.getElementById('trx-success-amount').textContent=formatRp(total);
   openModal('trx-success-modal');
-  await addTransactionToDB(lastTrx); // async save to Firebase
+  await addTransactionToDB(lastTrx);
+  if(stockChanged)await saveConfig(); // save updated stock to Firebase
 }
 
 function sendTrxWA(){closeModal('trx-success-modal');if(!lastTrx)return;window.open('https://wa.me/'+DB.settings.waNumber+'?text='+encodeURIComponent(buildStruk(lastTrx)),'_blank');}
@@ -954,22 +983,89 @@ function renderMenuTable(){
   const prods=DB.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
   const tb=document.getElementById('menu-table-body');
   if(!prods.length){tb.innerHTML='<tr><td colspan="6" class="text-center py-8 text-gray-400 text-sm">Tidak ada produk ditemukan</td></tr>';return;}
-  tb.innerHTML=prods.map(p=>`<tr class="border-t hover:bg-gray-50" style="border-color:#fafafa"><td class="px-4 py-3"><div class="flex items-center gap-2 flex-wrap"><span class="font-medium text-gray-800 text-sm">${p.name}</span>${p.recommended?'<span class="badge-rec">⭐</span>':''}${p.seasonal?'<span class="badge-sea">🍃</span>':''}</div></td><td class="px-4 py-3 text-gray-500 text-sm">${p.category}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-lg text-xs font-medium" style="background:#fde8ed;color:var(--rose)">${p.size}</span></td><td class="px-4 py-3 font-semibold text-gray-700 text-sm">${formatRp(p.price)}</td><td class="px-4 py-3"><button onclick="toggleActive('${p.id}')" class="px-3 py-1 rounded-full text-xs font-semibold" style="${p.active?'background:#dcfce7;color:#166534':'background:#f3f4f6;color:#6b7280'}">${p.active?'Aktif':'Nonaktif'}</button></td><td class="px-4 py-3"><div class="flex gap-2"><button onclick="openProductModal('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#dbeafe;color:#1d4ed8">Edit</button><button onclick="deleteProduct('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#fee2e2;color:#dc2626">Hapus</button></div></td></tr>`).join('');
+  tb.innerHTML=prods.map(p=>{
+    const rc=p.recipe&&p.recipe.length?`<span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#dcfce7;color:#166534">🧪 ${p.recipe.length} bahan</span>`:`<span class="text-xs text-gray-400">—</span>`;
+    return `<tr class="border-t hover:bg-gray-50" style="border-color:#fafafa"><td class="px-4 py-3"><div class="flex items-center gap-2 flex-wrap"><span class="font-medium text-gray-800 text-sm">${p.name}</span>${p.recommended?'<span class="badge-rec">⭐</span>':''}${p.seasonal?'<span class="badge-sea">🍃</span>':''}</div></td><td class="px-4 py-3 text-gray-500 text-sm">${p.category||'—'}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-lg text-xs font-medium" style="background:#fde8ed;color:var(--rose)">${p.size||'—'}</span></td><td class="px-4 py-3 font-semibold text-gray-700 text-sm">${formatRp(p.price)}</td><td class="px-4 py-3">${rc}</td><td class="px-4 py-3"><button onclick="toggleActive('${p.id}')" class="px-3 py-1 rounded-full text-xs font-semibold" style="${p.active?'background:#dcfce7;color:#166534':'background:#f3f4f6;color:#6b7280'}">${p.active?'Aktif':'Nonaktif'}</button></td><td class="px-4 py-3"><div class="flex gap-2"><button onclick="openProductModal('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#dbeafe;color:#1d4ed8">Edit</button><button onclick="deleteProduct('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#fee2e2;color:#dc2626">Hapus</button></div></td></tr>`;
+  }).join('');
 }
 async function toggleActive(id){const p=DB.products.find(p=>p.id===id);if(p){p.active=!p.active;renderMenuTable();await saveConfig();showToast(p.active?'Produk diaktifkan':'Produk dinonaktifkan','🔄');}}
 async function deleteProduct(id){const p=DB.products.find(p=>p.id===id);if(!p||!confirm(`Hapus "${p.name} (${p.size})"?`))return;DB.products=DB.products.filter(p=>p.id!==id);renderMenuTable();await saveConfig();showToast('Produk dihapus','🗑️');}
 
+let currentRecipe=[];
 function openProductModal(id){
   document.getElementById('product-modal-title').textContent=id?'Edit Produk':'Tambah Produk';
-  if(id){const p=DB.products.find(p=>p.id===id);document.getElementById('pf-id').value=p.id;document.getElementById('pf-name').value=p.name;document.getElementById('pf-category').value=p.category;document.getElementById('pf-size').value=p.size;document.getElementById('pf-price').value=p.price;document.getElementById('pf-recommended').checked=p.recommended;document.getElementById('pf-seasonal').checked=p.seasonal;document.getElementById('pf-active').checked=p.active;}
-  else{document.getElementById('pf-id').value='';document.getElementById('product-form').reset();document.getElementById('pf-active').checked=true;}
+  // Populate category datalist from existing products
+  const cats=[...new Set(DB.products.map(p=>p.category).filter(Boolean))];
+  const dl=document.getElementById('category-list');
+  if(dl)dl.innerHTML=cats.map(c=>`<option>${c}</option>`).join('');
+  if(id){
+    const p=DB.products.find(p=>p.id===id);
+    if(!p)return;
+    document.getElementById('pf-id').value=p.id;
+    document.getElementById('pf-name').value=p.name;
+    document.getElementById('pf-category').value=p.category;
+    document.getElementById('pf-size').value=p.size;
+    document.getElementById('pf-price').value=p.price;
+    document.getElementById('pf-recommended').checked=p.recommended;
+    document.getElementById('pf-seasonal').checked=p.seasonal;
+    document.getElementById('pf-active').checked=p.active;
+    currentRecipe=JSON.parse(JSON.stringify(p.recipe||[]));
+  } else {
+    document.getElementById('pf-id').value='';
+    document.getElementById('product-form').reset();
+    document.getElementById('pf-active').checked=true;
+    currentRecipe=[];
+  }
+  renderRecipeList();
   openModal('product-modal');
+}
+function renderRecipeList(){
+  const container=document.getElementById('recipe-list');
+  if(!container)return;
+  if(!DB.stock.length){
+    container.innerHTML='<p class="text-xs text-gray-400 italic">Tambahkan bahan baku di halaman Stok terlebih dahulu</p>';
+    return;
+  }
+  if(!currentRecipe.length){
+    container.innerHTML='<p class="text-xs text-gray-400 italic py-1">Belum ada bahan — klik "+ Tambah Bahan" di bawah</p>';
+    return;
+  }
+  container.innerHTML=currentRecipe.map((r,i)=>{
+    // Ensure stockId is valid; fallback to first stock
+    if(!DB.stock.find(s=>s.id===r.stockId))r.stockId=DB.stock[0].id;
+    const si=DB.stock.find(s=>s.id===r.stockId);
+    const unit=si?si.unit:'';
+    return `<div class="flex items-center gap-2">
+      <select onchange="currentRecipe[${i}].stockId=this.value;currentRecipe[${i}]._unit=DB.stock.find(s=>s.id===this.value)?.unit||'';renderRecipeList()" class="flex-1 px-2 py-1.5 rounded-lg border text-xs" style="border-color:#fde8ed">
+        ${DB.stock.map(s=>`<option value="${s.id}" ${s.id===r.stockId?'selected':''}>${s.name} (${s.unit})</option>`).join('')}
+      </select>
+      <input type="number" value="${r.qty||''}" min="0.001" step="any" oninput="currentRecipe[${i}].qty=parseFloat(this.value)||0" class="w-20 px-2 py-1.5 rounded-lg border text-xs text-right" style="border-color:#fde8ed" placeholder="0"/>
+      <span class="text-xs text-gray-400 w-8 flex-shrink-0">${unit}</span>
+      <button type="button" onclick="currentRecipe.splice(${i},1);renderRecipeList()" class="text-red-400 text-sm font-bold flex-shrink-0 leading-none">✕</button>
+    </div>`;
+  }).join('');
+}
+function addRecipeRow(){
+  if(!DB.stock.length){showToast('Tambah bahan baku di Stok dulu','⚠️');return;}
+  currentRecipe.push({stockId:DB.stock[0].id,qty:0});
+  renderRecipeList();
 }
 async function saveProduct(e){
   e.preventDefault();
   const id=document.getElementById('pf-id').value;
-  const data={id:id||'p-'+Date.now(),name:document.getElementById('pf-name').value,category:document.getElementById('pf-category').value,size:document.getElementById('pf-size').value,price:parseInt(document.getElementById('pf-price').value),recommended:document.getElementById('pf-recommended').checked,seasonal:document.getElementById('pf-seasonal').checked,active:document.getElementById('pf-active').checked};
-  if(id){const i=DB.products.findIndex(p=>p.id===id);DB.products[i]=data;}else DB.products.push(data);
+  const data={
+    id:id||'p-'+Date.now(),
+    name:document.getElementById('pf-name').value.trim(),
+    category:document.getElementById('pf-category').value.trim(),
+    size:document.getElementById('pf-size').value.trim(),
+    price:parseInt(document.getElementById('pf-price').value)||0,
+    recommended:document.getElementById('pf-recommended').checked,
+    seasonal:document.getElementById('pf-seasonal').checked,
+    active:document.getElementById('pf-active').checked,
+    recipe:currentRecipe.filter(r=>r.stockId&&r.qty>0)
+  };
+  if(id){const i=DB.products.findIndex(p=>p.id===id);if(i>-1)DB.products[i]=data;}
+  else DB.products.push(data);
   closeModal('product-modal');renderMenuTable();
   await saveConfig();showToast(id?'Produk diperbarui':'Produk ditambahkan','✅');
 }
@@ -978,18 +1074,74 @@ async function saveProduct(e){
 //  STOK
 // ═══════════════════════════════════════════════
 function renderStok(){
-  document.getElementById('stok-grid').innerHTML=DB.stock.map(s=>{
+  const grid=document.getElementById('stok-grid');
+  if(!DB.stock.length){
+    grid.innerHTML='<div class="col-span-3 text-center py-16 text-gray-400"><p class="text-5xl mb-3">📦</p><p class="text-sm mb-4">Belum ada bahan baku. Tambahkan bahan baku pertama kamu!</p><button onclick="openStokModal(null)" class="px-5 py-2 rounded-xl text-white text-sm font-semibold btn-rose">+ Tambah Bahan Baku</button></div>';
+    return;
+  }
+  grid.innerHTML=DB.stock.map(s=>{
     const r=s.qty/(s.threshold||1);
     const st=s.qty<=s.threshold?'red':r<=2?'yellow':'green';
     const stc={red:'#dc2626',yellow:'#ca8a04',green:'#16a34a'};
     const stb={red:'#fee2e2',yellow:'#fef9c3',green:'#dcfce7'};
     const stl={red:'Kritis 🔴',yellow:'Hampir Habis 🟡',green:'Aman 🟢'};
-    return `<div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid ${stc[st]}44"><div class="flex items-start justify-between mb-3"><div><h5 class="font-bold text-gray-800 text-sm">${s.name}</h5><p class="text-xs text-gray-400 mt-0.5">Min: ${s.threshold} ${s.unit}</p></div><span class="text-xs font-semibold px-2 py-1 rounded-full" style="background:${stb[st]};color:${stc[st]}">${stl[st]}</span></div><div class="flex items-end justify-between mb-3"><div><p class="text-3xl font-extrabold" style="color:${stc[st]}">${s.qty}</p><p class="text-xs text-gray-400">${s.unit}</p></div><button onclick="editThreshold('${s.id}')" class="text-xs px-3 py-1.5 rounded-lg border text-gray-500" style="border-color:#e5e7eb">Set Min</button></div><div class="bg-gray-100 rounded-full h-2"><div class="h-2 rounded-full" style="width:${Math.min(100,r*50)}%;background:${stc[st]};transition:width 0.5s"></div></div></div>`;
+    return `<div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid ${stc[st]}44">
+      <div class="flex items-start justify-between mb-3">
+        <div class="flex-1 min-w-0 pr-2"><h5 class="font-bold text-gray-800 text-sm truncate">${s.name}</h5><p class="text-xs text-gray-400 mt-0.5">Min: ${s.threshold} ${s.unit}</p></div>
+        <span class="text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0" style="background:${stb[st]};color:${stc[st]}">${stl[st]}</span>
+      </div>
+      <div class="flex items-end justify-between mb-3">
+        <div><p class="text-3xl font-extrabold" style="color:${stc[st]}">${s.qty}</p><p class="text-xs text-gray-400">${s.unit}</p></div>
+      </div>
+      <div class="bg-gray-100 rounded-full h-2 mb-4"><div class="h-2 rounded-full" style="width:${Math.min(100,r*50)}%;background:${stc[st]};transition:width 0.5s"></div></div>
+      <div class="flex gap-2">
+        <button onclick="openStokModal('${s.id}')" class="flex-1 py-2 rounded-lg text-xs font-semibold" style="background:#dbeafe;color:#1d4ed8">✏️ Edit</button>
+        <button onclick="deleteStok('${s.id}')" class="py-2 px-3 rounded-lg text-xs font-semibold" style="background:#fee2e2;color:#dc2626">🗑️</button>
+      </div>
+    </div>`;
   }).join('');
 }
 async function editThreshold(id){const s=DB.stock.find(s=>s.id===id);if(!s)return;const v=prompt(`Set threshold minimum untuk ${s.name} (${s.unit}):`,s.threshold);if(v!==null&&!isNaN(parseFloat(v))){s.threshold=parseFloat(v);renderStok();await saveConfig();showToast('Threshold diperbarui','📦');}}
 function openRestockModal(){document.getElementById('restock-form-body').innerHTML=DB.stock.map(s=>`<div class="flex items-center gap-3"><label class="flex-1 text-sm font-medium text-gray-700">${s.name} <span class="text-xs text-gray-400">(${s.qty} ${s.unit})</span></label><input type="number" id="rs-${s.id}" min="0" step="0.01" placeholder="Tambah" class="w-24 px-3 py-2 rounded-xl border text-sm text-right" style="border-color:#fde8ed"/><span class="text-xs text-gray-400 w-8">${s.unit}</span></div>`).join('');openModal('restock-modal');}
 async function saveRestock(){let ch=0;DB.stock.forEach(s=>{const el=document.getElementById('rs-'+s.id);if(el&&el.value&&parseFloat(el.value)>0){s.qty=Math.round((s.qty+parseFloat(el.value))*100)/100;ch++;}});closeModal('restock-modal');renderStok();await saveConfig();showToast(ch?`${ch} bahan baku diperbarui`:'Tidak ada perubahan',ch?'📦':'⚠️');}
+
+function openStokModal(id){
+  document.getElementById('stok-modal-title').textContent=id?'Edit Bahan Baku':'Tambah Bahan Baku';
+  if(id){
+    const s=DB.stock.find(s=>s.id===id);
+    if(!s)return;
+    document.getElementById('sf-id').value=s.id;
+    document.getElementById('sf-name').value=s.name;
+    document.getElementById('sf-unit').value=s.unit;
+    document.getElementById('sf-qty').value=s.qty;
+    document.getElementById('sf-threshold').value=s.threshold;
+  } else {
+    document.getElementById('sf-id').value='';
+    document.getElementById('stok-form').reset();
+  }
+  openModal('stok-modal');
+}
+async function saveStokItem(e){
+  e.preventDefault();
+  const id=document.getElementById('sf-id').value;
+  const data={
+    id:id||'s-'+Date.now(),
+    name:document.getElementById('sf-name').value.trim(),
+    unit:document.getElementById('sf-unit').value.trim(),
+    qty:parseFloat(document.getElementById('sf-qty').value)||0,
+    threshold:parseFloat(document.getElementById('sf-threshold').value)||0
+  };
+  if(id){const i=DB.stock.findIndex(s=>s.id===id);if(i>-1)DB.stock[i]=data;}
+  else DB.stock.push(data);
+  closeModal('stok-modal');renderStok();
+  await saveConfig();showToast(id?'Bahan baku diperbarui':'Bahan baku ditambahkan','📦');
+}
+async function deleteStok(id){
+  const s=DB.stock.find(s=>s.id===id);
+  if(!s||!confirm(`Hapus "${s.name}" dari daftar stok?\n\nPerhatian: Resep yang menggunakan bahan ini tidak akan berfungsi.`))return;
+  DB.stock=DB.stock.filter(s=>s.id!==id);
+  renderStok();await saveConfig();showToast('Bahan baku dihapus','🗑️');
+}
 
 // ═══════════════════════════════════════════════
 //  LAPORAN
