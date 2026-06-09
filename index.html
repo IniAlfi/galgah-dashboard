@@ -62,27 +62,13 @@
   }
   #bottom-nav { display:none; }
 
-  /* POS Desktop: show cart panel, hide mobile elements */
-  #kasir-desktop-cart { display:block; }
-  #kasir-mobile-fab { display:none; }
-  #kasir-bottom-sheet { display:none; }
-
-  /* POS Mobile overrides */
-  @media (max-width:767px) {
-    #kasir-layout { flex-direction:column !important; }
-    #kasir-desktop-cart { display:none !important; }
-    #kasir-mobile-fab { display:block !important; position:fixed; bottom:72px; left:0; right:0; z-index:90; padding:0 12px; }
-    #kasir-bottom-sheet { display:flex !important; }
-    #product-grid { grid-template-columns:repeat(2,1fr) !important; }
-    #category-tabs { flex-wrap:nowrap !important; overflow-x:auto; padding-bottom:4px; }
-    #category-tabs::-webkit-scrollbar { display:none; }
-  }
-
-  /* Cart bottom sheet */
+  /* Cart bottom sheet — always in DOM, JS controls visibility */
+  #kasir-mobile-fab { position:fixed; bottom:72px; left:0; right:0; z-index:90; padding:0 12px; display:none; }
   #kasir-bottom-sheet {
     position:fixed; inset:0; z-index:150;
     flex-direction:column; justify-content:flex-end;
     pointer-events:none; opacity:0; transition:opacity 0.25s;
+    display:none;
   }
   #kasir-bottom-sheet.open { pointer-events:all; opacity:1; }
   #kasir-sheet-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.45); }
@@ -94,6 +80,8 @@
   #kasir-bottom-sheet.open #kasir-sheet-content { transform:translateY(0); }
   #kasir-sheet-drag { width:40px; height:4px; background:#e5e7eb; border-radius:99px; margin:12px auto 6px; flex-shrink:0; }
   #kasir-sheet-items { flex:1; overflow-y:auto; padding:0 16px 8px; }
+  #category-tabs { overflow-x:auto; }
+  #category-tabs::-webkit-scrollbar { display:none; }
   .product-card { transition:all 0.15s; cursor:pointer; }
   .product-card:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(139,34,82,0.15); }
   .product-card:active { transform:scale(0.97); }
@@ -809,11 +797,32 @@ function refreshDashboard(){
 // ═══════════════════════════════════════════════
 //  KASIR
 // ═══════════════════════════════════════════════
+function isMobile(){ return window.innerWidth < 768; }
+
+function applyKasirLayout(){
+  const mobile = isMobile();
+  const layout = document.getElementById('kasir-layout');
+  const desktopCart = document.getElementById('kasir-desktop-cart');
+  const mobileFab = document.getElementById('kasir-mobile-fab');
+  const bottomSheet = document.getElementById('kasir-bottom-sheet');
+  const grid = document.getElementById('product-grid');
+
+  if(layout) layout.style.flexDirection = mobile ? 'column' : 'row';
+  if(desktopCart) desktopCart.style.display = mobile ? 'none' : 'block';
+  if(mobileFab) mobileFab.style.display = mobile ? 'block' : 'none';
+  if(bottomSheet) bottomSheet.style.display = mobile ? 'flex' : 'none';
+  if(grid){
+    grid.style.gridTemplateColumns = mobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)';
+  }
+}
+
 function renderKasir(){
   const prods=DB.products.filter(p=>p.active);
   const cats=['Semua',...new Set(prods.map(p=>p.category))];
-  document.getElementById('category-tabs').innerHTML=cats.map(c=>`<button onclick="setCategory('${c.replace(/'/g,"\\'")}')\" class="px-4 py-2 rounded-xl text-sm font-medium transition-all" style="${c===activeCategory?'background:var(--rose);color:white':'background:white;color:#6b7280;border:1px solid #fde8ed'}">${c}</button>`).join('');
-  renderProductGrid();renderCart();
+  document.getElementById('category-tabs').innerHTML=cats.map(c=>`<button onclick="setCategory('${c.replace(/'/g,"\\'")}')\" class="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-medium transition-all" style="${c===activeCategory?'background:var(--rose);color:white':'background:white;color:#6b7280;border:1px solid #fde8ed'}">${c}</button>`).join('');
+  applyKasirLayout();
+  renderProductGrid();
+  renderCart();
 }
 function setCategory(cat){activeCategory=cat;renderKasir();}
 function renderProductGrid(){
@@ -1115,6 +1124,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   await loadDB();
   refreshDashboard();
   if(DB.settings&&DB.settings.reminder)scheduleReminder();
+});
+window.addEventListener('resize', ()=>{
+  if(currentPage==='kasir') applyKasirLayout();
 });
 </script>
 </body>
