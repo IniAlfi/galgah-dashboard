@@ -550,8 +550,8 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-function getConfigRef(){ return db.collection('galgah-'+activeBranch).doc('config'); }
-function getTrxColl(){ return db.collection('transactions-'+activeBranch); }
+function getConfigRef(){ return activeBranch==='rik' ? db.collection('galgah').doc('config') : db.collection('galgah-'+activeBranch).doc('config'); }
+function getTrxColl(){ return activeBranch==='rik' ? db.collection('transactions') : db.collection('transactions-'+activeBranch); }
 // Legacy aliases (updated dynamically)
 let CONFIG_REF = null;
 let TRX_COLL   = null;
