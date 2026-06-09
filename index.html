@@ -348,7 +348,10 @@
         <div class="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Revenue per Hari</h4><div class="chart-container"><canvas id="chart-lap-daily"></canvas></div></div>
         <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Revenue per Kategori</h4><div style="height:220px;position:relative"><canvas id="chart-lap-pie"></canvas></div></div>
       </div>
-      <div class="bg-white rounded-2xl p-5 shadow-sm mb-5" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Top 10 Produk Terlaris</h4><div style="height:280px;position:relative"><canvas id="chart-lap-top"></canvas></div></div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-1">Revenue per Jam</h4><p class="text-xs text-gray-400 mb-4">Rata-rata transaksi di tiap jam dalam periode ini</p><div style="height:220px;position:relative"><canvas id="chart-lap-hourly"></canvas></div></div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed"><h4 class="font-bold text-gray-700 mb-4">Top 10 Produk Terlaris</h4><div style="height:220px;position:relative"><canvas id="chart-lap-top"></canvas></div></div>
+      </div>
       <div class="bg-white rounded-2xl shadow-sm overflow-hidden" style="border:1px solid #fde8ed">
         <div class="p-4 border-b" style="border-color:#fde8ed"><h4 class="font-bold text-gray-700">Riwayat Transaksi</h4></div>
         <div class="overflow-x-auto">
@@ -552,7 +555,7 @@ let lapPeriod = 'week';
 let trxSortField = 'time', trxSortDir = 'desc';
 let lastTrx = null;
 let charts = {};
-let lapChartBar=null, lapChartPie=null, lapChartTop=null;
+let lapChartBar=null, lapChartPie=null, lapChartTop=null, lapChartHourly=null;
 let isSaving = false;
 
 // ═══════════════════════════════════════════════
@@ -1178,6 +1181,15 @@ function refreshLaporan(){
   if(lapChartTop){lapChartTop.destroy();lapChartTop=null;}
   const c3=document.getElementById('chart-lap-top');
   if(c3)lapChartTop=new Chart(c3,{type:'bar',data:{labels:top.map(p=>p[0]),datasets:[{label:'Qty',data:top.map(p=>p[1]),backgroundColor:'#8B2252',borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:'#fde8ed'},ticks:{font:{size:9}}},y:{grid:{display:false},ticks:{font:{size:9}}}}}});
+  // Hourly revenue chart
+  const hourlyRev=Array(24).fill(0),hourlyTrx=Array(24).fill(0);
+  trxs.forEach(t=>{const h=parseInt((t.time||'00:00').split(':')[0]);if(h>=0&&h<24){hourlyRev[h]+=t.total;hourlyTrx[h]++;}});
+  const peakH=hourlyRev.indexOf(Math.max(...hourlyRev));
+  const hColors=hourlyRev.map((_,i)=>i===peakH&&hourlyRev[i]>0?'#8B2252':'#F9B8C4');
+  const hLabels=Array.from({length:24},(_,i)=>String(i).padStart(2,'0')+':00');
+  if(lapChartHourly){lapChartHourly.destroy();lapChartHourly=null;}
+  const c4=document.getElementById('chart-lap-hourly');
+  if(c4)lapChartHourly=new Chart(c4,{type:'bar',data:{labels:hLabels,datasets:[{label:'Revenue',data:hourlyRev,backgroundColor:hColors,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>`${formatRp(ctx.raw)} · ${hourlyTrx[ctx.dataIndex]} transaksi`}}},scales:{y:{ticks:{callback:v=>v>=1000?'Rp '+(v/1000).toFixed(0)+'rb':'Rp '+v,font:{size:9}},grid:{color:'#fde8ed'}},x:{grid:{display:false},ticks:{font:{size:8},maxRotation:45}}}}});
   const sorted=[...trxs].sort((a,b)=>{const va=trxSortField==='total'?a.total:a.timestamp,vb=trxSortField==='total'?b.total:b.timestamp;return trxSortDir==='desc'?(vb>va?1:-1):(va>vb?1:-1);});
   const tb=document.getElementById('lap-trx-table');
   if(!sorted.length){tb.innerHTML='<tr><td colspan="4" class="text-center py-8 text-gray-400 text-sm">Tidak ada transaksi dalam periode ini</td></tr>';return;}
