@@ -738,9 +738,9 @@ function setLoading(show,text='Memuat…'){
 //  NAVIGATION
 // ═══════════════════════════════════════════════
 function navigate(page,el){
-  document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.style.color='';n.style.background='';if(!n.classList.contains('active'))n.classList.add('text-gray-600');});
+  document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active','text-white');n.style.color='';n.style.background='';n.classList.add('text-gray-600');});
   const tgt=el||document.querySelector(`.nav-item[onclick*="'${page}'"]`);
-  if(tgt){tgt.classList.add('active');tgt.classList.remove('text-gray-600');}
+  if(tgt){tgt.classList.add('active','text-white');tgt.classList.remove('text-gray-600');}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pe=document.getElementById('page-'+page);
   if(pe)pe.classList.add('active');
