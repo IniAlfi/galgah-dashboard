@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GALGAH — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+  * { font-family: 'Inter', sans-serif; }
+  :root { --pink:#F9B8C4; --rose:#8B2252; --cream:#FFF5F0; --light-rose:#f5e6ee; }
+  body { background:var(--cream); }
+  .sidebar { transition:transform 0.3s ease; }
+  .page { display:none; }
+  .page.active { display:block; }
+  .nav-item { transition:all 0.2s; }
+  .nav-item.active { background:var(--rose); color:white; }
+  .nav-item:not(.active):hover { background:var(--light-rose); }
+  #loading-overlay { position:fixed; inset:0; z-index:9999; background:rgba(255,245,240,0.95); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; }
+  #loading-overlay.hidden { display:none; }
+  .spinner { width:48px; height:48px; border:4px solid #fde8ed; border-top-color:var(--rose); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .toast { position:fixed; bottom:80px; right:20px; z-index:9000; transform:translateX(130%); transition:transform 0.3s ease; }
+  .toast.show { transform:translateX(0); }
+  @media (max-width:767px) {
+    .toast { bottom:auto; top:80px; right:12px; left:12px; transform:translateY(-120px); }
+    .toast.show { transform:translateY(0); }
+  }
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; transition:opacity 0.2s; }
+  .modal-backdrop.open { opacity:1; pointer-events:all; }
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#f1f1f1; }
+  ::-webkit-scrollbar-thumb { background:var(--pink); border-radius:3px; }
+  @media (max-width:768px) {
+    #sidebar { position:fixed; left:0; top:0; height:100vh; z-index:200; transform:translateX(-100%); }
+    #sidebar.mobile-open { transform:translateX(0); }
+    #bottom-nav { display:flex !important; }
+    #main-content { margin-left:0 !important; padding-bottom:70px; }
+  }
+  #bottom-nav { display:none; }
+  #sync-dot { width:8px; height:8px; border-radius:50%; background:#22c55e; display:inline-block; }
+  #sync-dot.syncing { background:#f59e0b; animation:pulse 1s infinite; }
+  #sync-dot.error { background:#ef4444; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .btn-rose { background:var(--rose); color:white; }
+  .input-harian-card { background:white; border:1px solid #fde8ed; border-radius:16px; padding:20px; }
+  .lap-table th { background:#fdf2f6; padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#6b7280; white-space:nowrap; }
+  .lap-table td { padding:10px 12px; font-size:12px; border-top:1px solid #fafafa; white-space:nowrap; }
+  .lap-table tr:hover td { background:#fffbfc; }
+</style>
+</head>
+<body class="min-h-screen" style="background:#FFF5F0">
+
+<div id="loading-overlay">
+  <div class="text-4xl">🐄</div>
+  <div class="spinner"></div>
+  <p id="loading-text" class="text-sm font-medium" style="color:var(--rose)">Memuat data GALGAH…</p>
+</div>
+
+<aside id="sidebar" class="sidebar fixed left-0 top-0 h-full w-64 bg-white shadow-xl z-50 flex flex-col">
+  <div class="p-5 border-b" style="border-color:#fde8ed">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-11 h-11 rounded-xl flex items-center justify-center text-2xl" style="background:var(--rose)">🐄</div>
+      <div>
+        <h1 class="font-extrabold text-lg" style="color:var(--rose)">GALGAH</h1>
+        <p id="sidebar-branch-label" class="text-xs text-gray-400">RIK UI Canteen</p>
+      </div>
+    </div>
+    <div class="rounded-xl p-1 flex gap-1" style="background:#fdf2f6">
+      <button id="branch-btn-rik" onclick="switchBranch('rik')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all" style="background:var(--rose);color:white">🏫 RIK UI</button>
+      <button id="branch-btn-fasilkom" onclick="switchBranch('fasilkom')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all text-gray-500">💻 Fasilkom</button>
+    </div>
+  </div>
+  <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
+    <a href="#" class="nav-item active flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-white" onclick="return navigate('dashboard',this)"><span class="text-lg">📊</span> Dashboard</a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('kasir',this)"><span class="text-lg">📝</span> Input Harian</a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('menu',this)"><span class="text-lg">🥛</span> Menu & Produk</a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('stok',this)"><span class="text-lg">📦</span> Stok & Bahan Baku</a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('laporan',this)"><span class="text-lg">📈</span> Laporan</a>
+    <a href="#" class="nav-item flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-600" onclick="return navigate('settings',this)"><span class="text-lg">⚙️</span> Pengaturan</a>
+  </nav>
+  <div class="p-4 border-t flex items-center gap-2" style="border-color:#fde8ed">
+    <span id="sync-dot"></span>
+    <p id="sync-status" class="text-xs text-gray-400">Tersinkron</p>
+  </div>
+</aside>
+
+<div id="sidebar-overlay" class="fixed inset-0 bg-black/40 z-40 hidden" onclick="closeMobileSidebar()"></div>
+
+<div id="main-content" style="margin-left:256px;min-height:100vh;">
+  <header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b px-6 py-4 flex items-center justify-between" style="border-color:#fde8ed">
+    <div class="flex items-center gap-3">
+      <button class="md:hidden p-2 rounded-lg" style="background:#fde8ed" onclick="toggleMobileSidebar()">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div>
+        <div class="flex items-center gap-2">
+          <h2 id="page-title" class="font-bold text-gray-800 text-base">Dashboard</h2>
+          <span id="branch-header-badge" class="text-xs font-semibold px-2 py-0.5 rounded-full hidden md:inline-block" style="background:#fde8ed;color:var(--rose)">RIK UI</span>
+        </div>
+        <p id="page-sub" class="text-xs text-gray-400"></p>
+      </div>
+    </div>
+    <div class="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style="background:var(--rose)">G</div>
+  </header>
+
+  <main class="p-6">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div id="stock-alert-banner" class="hidden mb-5 p-4 rounded-xl flex items-center gap-3" style="background:#fef2f2;border:1px solid #fecaca">
+        <span class="text-xl">⚠️</span>
+        <div class="flex-1"><p class="font-semibold text-sm" style="color:#b91c1c">Peringatan Stok Rendah</p><p id="stock-alert-text" class="text-xs mt-0.5" style="color:#ef4444"></p></div>
+        <button onclick="navigate('stok',null)" class="text-xs font-semibold underline" style="color:#b91c1c">Lihat →</button>
+      </div>
+      <div class="mb-6">
+        <h3 id="greeting-text" class="text-2xl font-bold text-gray-800"></h3>
+        <p id="greeting-date" class="text-gray-500 text-sm mt-1"></p>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-2"><span class="text-2xl">💰</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#dcfce7;color:#166534">Hari ini</span></div>
+          <p class="text-xs text-gray-500 font-medium">Pendapatan Hari Ini</p>
+          <p id="stat-revenue" class="text-xl font-extrabold mt-1" style="color:var(--rose)">Rp 0</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-2"><span class="text-2xl">🥛</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#dbeafe;color:#1d4ed8">Hari ini</span></div>
+          <p class="text-xs text-gray-500 font-medium">Susu Terjual Hari Ini</p>
+          <p id="stat-liter-today" class="text-xl font-extrabold mt-1 text-gray-800">0 L</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-2"><span class="text-2xl">📦</span><span id="period-badge" class="text-xs font-medium px-2 py-1 rounded-full" style="background:#fef9c3;color:#854d0e">Periode</span></div>
+          <p class="text-xs text-gray-500 font-medium">Total Susu Periode Ini</p>
+          <p id="stat-liter-period" class="text-xl font-extrabold mt-1" style="color:var(--rose)">0 L</p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-2"><span class="text-2xl">⭐</span><span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#f3e8ff;color:#6b21a8">Best</span></div>
+          <p class="text-xs text-gray-500 font-medium">Best Seller Hari Ini</p>
+          <p id="stat-bestseller" class="text-sm font-extrabold mt-1 text-gray-800 truncate">—</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
+        <div class="lg:col-span-3 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <h4 class="font-bold text-gray-700 mb-4">Pendapatan 7 Hari Terakhir</h4>
+          <div style="position:relative;height:220px"><canvas id="chart-revenue-7d"></canvas></div>
+        </div>
+        <div class="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center justify-between mb-4">
+            <h4 class="font-bold text-gray-700">5 Input Terbaru</h4>
+            <button onclick="navigate('kasir',null)" class="px-3 py-1.5 rounded-xl text-white text-xs font-semibold btn-rose">📝 Input</button>
+          </div>
+          <div id="recent-transactions"></div>
+        </div>
+      </div>
+
+      <div class="flex gap-3 flex-wrap">
+        <button onclick="navigate('kasir',null)" class="flex items-center gap-2 px-5 py-3 rounded-xl text-white text-sm font-semibold btn-rose shadow-md">📝 Input Harian</button>
+        <button onclick="navigate('laporan',null)" class="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold shadow-sm border-2" style="color:var(--rose);border-color:var(--rose)">📈 Lihat Laporan</button>
+      </div>
+      <button onclick="openWAModal()" title="Kirim Ringkasan WhatsApp" class="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl hover:scale-110 transition-transform" style="background:var(--rose)">📱</button>
+    </div>
+
+    <!-- INPUT HARIAN (dulu Kasir) -->
+    <div id="page-kasir" class="page">
+      <div class="max-w-2xl mx-auto">
+        <div class="bg-white rounded-2xl shadow-sm p-6 mb-5" style="border:1px solid #fde8ed">
+          <div class="flex items-center gap-3 mb-5">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:var(--rose)">📝</div>
+            <div>
+              <h3 class="font-bold text-gray-800">Input Harian Closingan</h3>
+              <p id="input-period-label" class="text-xs text-gray-400"></p>
+            </div>
+          </div>
+
+          <!-- Alert: sudah ada data hari ini -->
+          <div id="existing-entry-alert" class="hidden mb-4 p-3 rounded-xl flex items-center gap-2" style="background:#fef9c3;border:1px solid #fde68a">
+            <span>⚠️</span>
+            <p class="text-xs text-yellow-800">Data hari ini sudah ada. Form di bawah sudah diisi — simpan untuk update.</p>
+          </div>
+
+          <form id="input-form" onsubmit="submitDailyReport(event)" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal *</label>
+                <input type="date" id="if-date" required class="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed" onchange="checkExistingEntry()"/>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Penjualan Susu (Liter) *</label>
+                <input type="number" id="if-liter" required min="0" step="0.5" placeholder="0" class="w-full px-3 py-2.5 rounded-xl border text-sm" style="border-color:#fde8ed"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Cookies / Brookie</label>
+                <input type="number" id="if-cookies" min="0" step="1" placeholder="0" class="w-full px-3 py-2.5 rounded-xl border text-sm" style="border-color:#fde8ed"/>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Penukaran Member</label>
+                <input type="number" id="if-penukaran" min="0" step="1" placeholder="0" class="w-full px-3 py-2.5 rounded-xl border text-sm" style="border-color:#fde8ed"/>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Total QRIS (Rp)</label>
+                <input type="number" id="if-qris" min="0" step="1000" placeholder="0" class="w-full px-3 py-2.5 rounded-xl border text-sm" style="border-color:#fde8ed" oninput="updatePendapatanPreview()"/>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Total Cash (Rp)</label>
+                <input type="number" id="if-cash" min="0" step="1000" placeholder="0" class="w-full px-3 py-2.5 rounded-xl border text-sm" style="border-color:#fde8ed" oninput="updatePendapatanPreview()"/>
+              </div>
+            </div>
+
+            <!-- Pendapatan preview -->
+            <div class="rounded-xl p-4 flex items-center justify-between" style="background:#fdf2f6">
+              <span class="text-sm font-semibold text-gray-600">💰 Pendapatan Harian</span>
+              <span id="pendapatan-preview" class="text-xl font-extrabold" style="color:var(--rose)">Rp 0</span>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 mb-1">Best Seller of the Day</label>
+              <input type="text" id="if-bestseller" placeholder="cth: oreo regular, seasalt large..." class="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 mb-1">Keterangan</label>
+              <input type="text" id="if-keterangan" placeholder="cth: UTBK day 1, Kebijakan jumat pjj..." class="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 mb-1">Notes</label>
+              <input type="text" id="if-notes" placeholder="cth: 150 disetor, cash dipake beli..." class="w-full px-3 py-2.5 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/>
+            </div>
+            <button type="submit" id="if-submit-btn" class="w-full py-4 rounded-xl text-white font-bold text-base btn-rose shadow-md">✅ Simpan Input Harian</button>
+          </form>
+        </div>
+
+        <!-- Rekap periode -->
+        <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #fde8ed">
+          <h4 class="font-bold text-gray-700 mb-3">Rekap Periode Saat Ini</h4>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="text-center p-3 rounded-xl" style="background:#fdf2f6">
+              <p class="text-xs text-gray-500 mb-1">Total Susu</p>
+              <p id="recap-liter" class="text-lg font-extrabold" style="color:var(--rose)">0 L</p>
+            </div>
+            <div class="text-center p-3 rounded-xl" style="background:#fdf2f6">
+              <p class="text-xs text-gray-500 mb-1">Total Pendapatan</p>
+              <p id="recap-revenue" class="text-lg font-extrabold" style="color:var(--rose)">Rp 0</p>
+            </div>
+            <div class="text-center p-3 rounded-xl" style="background:#fdf2f6">
+              <p class="text-xs text-gray-500 mb-1">Hari Input</p>
+              <p id="recap-days" class="text-lg font-extrabold text-gray-800">0</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MENU -->
+    <div id="page-menu" class="page">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="font-bold text-gray-700">Daftar Produk</h3>
+        <button onclick="openProductModal(null)" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">+ Tambah Produk</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm overflow-hidden" style="border:1px solid #fde8ed">
+        <div class="p-4 border-b" style="border-color:#fde8ed">
+          <input type="text" id="menu-search" placeholder="🔍 Cari produk..." class="w-full px-4 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed" oninput="renderMenuTable()"/>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr style="background:#fdf2f6" class="text-left text-xs uppercase tracking-wide text-gray-500 font-semibold">
+              <th class="px-4 py-3">Produk</th><th class="px-4 py-3">Kategori</th><th class="px-4 py-3">Ukuran</th><th class="px-4 py-3">Harga</th><th class="px-4 py-3">Resep</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
+            </tr></thead>
+            <tbody id="menu-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- STOK -->
+    <div id="page-stok" class="page">
+      <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <h3 class="font-bold text-gray-700">Stok & Bahan Baku</h3>
+        <div class="flex flex-wrap gap-2">
+          <button onclick="openStokModal(null)" class="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">+ Tambah Bahan</button>
+          <button onclick="openRestockModal()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📥 Terima Stok</button>
+          <button onclick="exportStokPDF()" class="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📄 PDF</button>
+        </div>
+      </div>
+      <div id="stok-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"></div>
+    </div>
+
+    <!-- LAPORAN -->
+    <div id="page-laporan" class="page">
+      <!-- Period bar -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm mb-5 flex flex-wrap gap-3 items-center" style="border:1px solid #fde8ed">
+        <div>
+          <p class="text-xs text-gray-500 font-medium mb-0.5">Periode Aktif</p>
+          <p id="lap-period-label" class="text-sm font-bold" style="color:var(--rose)">—</p>
+        </div>
+        <div class="flex gap-2 ml-auto flex-wrap">
+          <button onclick="setLapPeriod('current')" id="btn-current" class="px-4 py-2 rounded-xl text-sm font-medium btn-rose">Periode Ini</button>
+          <button onclick="setLapPeriod('custom')" id="btn-custom" class="px-4 py-2 rounded-xl text-sm font-medium bg-gray-100 text-gray-600">Custom</button>
+          <button onclick="exportCSV()" class="flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-semibold border-2" style="color:var(--rose);border-color:var(--rose)">📊 CSV</button>
+          <button onclick="exportLaporanPDF()" class="flex items-center gap-1 px-4 py-2 rounded-xl text-white text-sm font-semibold btn-rose">📄 PDF</button>
+        </div>
+      </div>
+      <div id="custom-date-range" class="hidden bg-white rounded-2xl p-4 shadow-sm mb-5 flex gap-3 items-center" style="border:1px solid #fde8ed">
+        <label class="text-sm text-gray-600">Dari:</label>
+        <input type="date" id="lap-date-from" class="px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed" onchange="refreshLaporan()"/>
+        <label class="text-sm text-gray-600">—</label>
+        <input type="date" id="lap-date-to" class="px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed" onchange="refreshLaporan()"/>
+      </div>
+
+      <!-- Summary stats -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+        <div class="bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 mb-1">Total Pendapatan</p><p id="lap-total-rev" class="text-xl font-extrabold" style="color:var(--rose)">Rp 0</p></div>
+        <div class="bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 mb-1">Total Susu</p><p id="lap-total-liter" class="text-xl font-extrabold text-gray-800">0 L</p></div>
+        <div class="bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 mb-1">Total QRIS</p><p id="lap-total-qris" class="text-xl font-extrabold" style="color:var(--rose)">Rp 0</p></div>
+        <div class="bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed"><p class="text-xs text-gray-500 mb-1">Total Cash</p><p id="lap-total-cash" class="text-xl font-extrabold text-gray-800">Rp 0</p></div>
+      </div>
+
+      <!-- Chart -->
+      <div class="bg-white rounded-2xl p-5 shadow-sm mb-5" style="border:1px solid #fde8ed">
+        <h4 class="font-bold text-gray-700 mb-4">Pendapatan per Hari</h4>
+        <div style="position:relative;height:220px"><canvas id="chart-lap-daily"></canvas></div>
+      </div>
+
+      <!-- Main table -->
+      <div class="bg-white rounded-2xl shadow-sm overflow-hidden" style="border:1px solid #fde8ed">
+        <div class="p-4 border-b flex items-center justify-between" style="border-color:#fde8ed">
+          <h4 class="font-bold text-gray-700">Riwayat Laporan Harian</h4>
+          <span id="lap-row-count" class="text-xs text-gray-400"></span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full lap-table">
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Susu (L)</th>
+                <th>Total Susu Bulanan</th>
+                <th>Cookies</th>
+                <th>Penukaran</th>
+                <th>QRIS</th>
+                <th>Cash</th>
+                <th>Pendapatan</th>
+                <th>Best Seller</th>
+                <th>Keterangan</th>
+                <th>Notes</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="lap-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="page-settings" class="page">
+      <div class="max-w-lg">
+        <h3 class="font-bold text-gray-700 mb-5">Pengaturan</h3>
+        <div class="bg-white rounded-2xl shadow-sm p-6 space-y-5 mb-4" style="border:1px solid #fde8ed">
+          <div><label class="block text-sm font-semibold text-gray-700 mb-2">Nama Toko</label><input type="text" id="setting-store-name" placeholder="Galgah" class="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
+          <div><label class="block text-sm font-semibold text-gray-700 mb-1">Nomor WhatsApp Pemilik</label><p class="text-xs text-gray-400 mb-2">Format: 628xxxxxxxxx</p><input type="text" id="setting-wa-number" placeholder="628123456789" class="w-full px-4 py-3 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
+          <div class="flex items-center justify-between py-2">
+            <div><p class="text-sm font-semibold text-gray-700">Reminder Ringkasan (21:00)</p><p class="text-xs text-gray-400 mt-0.5">Notifikasi otomatis setiap malam</p></div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="setting-reminder" class="sr-only peer"/>
+              <div id="toggle-track" class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+          </div>
+          <button onclick="saveSettings()" class="w-full py-3 rounded-xl text-white font-bold text-sm btn-rose">💾 Simpan Pengaturan</button>
+        </div>
+
+        <div class="bg-white rounded-2xl p-4 shadow-sm mb-4" style="border:1px solid #fde8ed">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-lg">🔥</span>
+            <p class="font-semibold text-sm text-gray-700">Status Firebase</p>
+            <span id="fb-status-badge" class="text-xs px-2 py-1 rounded-full font-medium" style="background:#dcfce7;color:#166534">Terhubung</span>
+          </div>
+          <p class="text-xs text-gray-400">Collection: <span class="font-mono font-medium text-gray-600">daily-reports</span></p>
+          <button onclick="confirmResetData()" class="mt-3 text-xs font-medium px-3 py-1.5 rounded-lg border" style="color:#ef4444;border-color:#fecaca">🗑️ Reset Semua Data</button>
+        </div>
+
+        <div class="bg-white rounded-2xl p-4 shadow-sm" style="border:1px solid #fde8ed">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-lg">📅</span>
+            <p class="font-semibold text-sm text-gray-700">Mulai Periode Baru (Gajian)</p>
+          </div>
+          <p class="text-xs text-gray-400 mb-3">Hapus semua data laporan cabang ini untuk memulai periode baru. Biasanya dilakukan setiap tanggal 26. Data produk & stok tidak ikut terhapus.</p>
+          <button onclick="confirmStartNewPeriod()" class="w-full py-2.5 rounded-xl text-sm font-bold border-2" style="color:var(--rose);border-color:var(--rose)">🔄 Mulai Periode Baru</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- BOTTOM NAV -->
+<nav id="bottom-nav" class="fixed bottom-0 left-0 right-0 z-50 bg-white border-t px-2 py-2 justify-around" style="border-color:#fde8ed">
+  <button onclick="navigate('dashboard',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📊</span>Home</button>
+  <button onclick="navigate('kasir',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📝</span>Input</button>
+  <button onclick="navigate('menu',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">🥛</span>Menu</button>
+  <button onclick="navigate('stok',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📦</span>Stok</button>
+  <button onclick="navigate('laporan',null)" class="flex flex-col items-center gap-0.5 text-xs text-gray-500 py-1 px-3"><span class="text-lg">📈</span>Laporan</button>
+</nav>
+
+<!-- MODALS -->
+<div id="wa-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+    <div class="flex items-center justify-between mb-4"><h3 class="font-bold text-gray-800">📱 Ringkasan WhatsApp</h3><button onclick="closeModal('wa-modal')" class="text-gray-400 text-xl">✕</button></div>
+    <div id="wa-message-preview" class="rounded-xl p-4 text-sm text-gray-700 whitespace-pre-wrap font-mono mb-4 max-h-64 overflow-y-auto" style="background:#f0fdf4"></div>
+    <div class="flex gap-3">
+      <button onclick="sendWA()" class="flex-1 py-3 rounded-xl text-white font-bold text-sm" style="background:#25D366">📲 Buka WhatsApp</button>
+      <button onclick="copyWA()" class="flex-1 py-3 rounded-xl font-bold text-sm border-2" style="color:var(--rose);border-color:var(--rose)">📋 Copy</button>
+    </div>
+  </div>
+</div>
+
+<div id="product-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4"><h3 id="product-modal-title" class="font-bold text-gray-800">Tambah Produk</h3><button onclick="closeModal('product-modal')" class="text-gray-400 text-xl">✕</button></div>
+    <form id="product-form" class="space-y-4" onsubmit="saveProduct(event)">
+      <input type="hidden" id="pf-id"/>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Nama Produk *</label><input type="text" id="pf-name" required class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Kategori</label><input type="text" id="pf-category" list="category-list" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/><datalist id="category-list"></datalist></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Ukuran / Varian</label><input type="text" id="pf-size" list="size-list" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/><datalist id="size-list"><option>Regular</option><option>Large</option><option>Single</option><option>250ml</option><option>500ml</option></datalist></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Harga (Rp)</label><input type="number" id="pf-price" min="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
+      <div class="flex gap-4">
+        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-recommended" class="rounded"/> Recommended ⭐</label>
+        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-seasonal" class="rounded"/> Seasonal 🍃</label>
+      </div>
+      <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"><input type="checkbox" id="pf-active" class="rounded" checked/> Aktif</label>
+      <div class="border-t pt-4" style="border-color:#fde8ed">
+        <label class="block text-xs font-semibold text-gray-600 mb-1">🧪 Resep Bahan Baku <span class="font-normal text-gray-400">(opsional)</span></label>
+        <div id="recipe-list" class="space-y-2 mb-2"></div>
+        <button type="button" onclick="addRecipeRow()" class="text-xs px-3 py-2 rounded-lg w-full text-center" style="border:1px dashed #fde8ed;color:var(--rose)">+ Tambah Bahan</button>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal('product-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
+        <button type="submit" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="stok-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6">
+    <div class="flex items-center justify-between mb-4"><h3 id="stok-modal-title" class="font-bold text-gray-800">Tambah Bahan Baku</h3><button onclick="closeModal('stok-modal')" class="text-gray-400 text-xl">✕</button></div>
+    <form id="stok-form" class="space-y-4" onsubmit="saveStokItem(event)">
+      <input type="hidden" id="sf-id"/>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Nama Bahan *</label><input type="text" id="sf-name" required placeholder="cth: Susu Segar" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Satuan *</label><input type="text" id="sf-unit" required list="unit-list" placeholder="cth: Liter" class="w-full px-3 py-2 rounded-xl border text-sm focus:outline-none" style="border-color:#fde8ed"/><datalist id="unit-list"><option>Liter</option><option>Kg</option><option>gram</option><option>pcs</option><option>botol</option><option>sachet</option></datalist></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Stok Awal</label><input type="number" id="sf-qty" min="0" step="any" placeholder="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
+      <div><label class="block text-xs font-semibold text-gray-600 mb-1">Stok Minimum</label><input type="number" id="sf-threshold" min="0" step="any" placeholder="0" class="w-full px-3 py-2 rounded-xl border text-sm" style="border-color:#fde8ed"/></div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="closeModal('stok-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
+        <button type="submit" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="restock-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+    <div class="flex items-center justify-between mb-4"><h3 class="font-bold text-gray-800">📥 Terima Stok</h3><button onclick="closeModal('restock-modal')" class="text-gray-400 text-xl">✕</button></div>
+    <div id="restock-form-body" class="space-y-3 max-h-[55vh] overflow-y-auto"></div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closeModal('restock-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Batal</button>
+      <button onclick="saveRestock()" class="flex-1 py-3 rounded-xl text-white text-sm font-semibold btn-rose">✅ Simpan</button>
+    </div>
+  </div>
+</div>
+
+<div id="daily-success-modal" class="modal-backdrop">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-7 text-center">
+    <div class="text-6xl mb-3">✅</div>
+    <h3 class="font-bold text-gray-800 text-lg mb-1">Input Tersimpan!</h3>
+    <p id="success-summary" class="text-sm text-gray-500 mb-5"></p>
+    <div class="flex gap-3">
+      <button onclick="closeModal('daily-success-modal')" class="flex-1 py-3 rounded-xl text-sm font-semibold border-2 text-gray-600" style="border-color:#e5e7eb">Tutup</button>
+      <button onclick="sendDailyWA()" class="flex-1 py-3 rounded-xl text-white text-sm font-bold" style="background:#25D366">📲 Kirim WA</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast">
+  <div class="bg-white rounded-xl shadow-2xl px-4 py-3 flex items-center gap-3" style="min-width:240px;border:1px solid #fde8ed">
+    <span id="toast-icon" class="text-xl">✅</span>
+    <p id="toast-msg" class="text-sm font-medium text-gray-700"></p>
+  </div>
+</div>
+
+<script>
+// ═══ FIREBASE INIT ═══
+const firebaseConfig = {
+  apiKey: "AIzaSyDDWXBjThpApW28X3N8W6oCf0-SRrawQeQ",
+  authDomain: "galgahh-e8726.firebaseapp.com",
+  projectId: "galgahh-e8726",
+  storageBucket: "galgahh-e8726.firebasestorage.app",
+  messagingSenderId: "943565273691",
+  appId: "1:943565273691:web:2658eca8929d83483a9d7e"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+function getConfigRef(){ return activeBranch==='rik' ? db.collection('galgah').doc('config') : db.collection('galgah-'+activeBranch).doc('config'); }
+function getDailyReportsColl(){ return activeBranch==='rik' ? db.collection('daily-reports') : db.collection('daily-reports-'+activeBranch); }
+
+// ═══ STATE ═══
+let activeBranch = localStorage.getItem('galgah_branch') || 'rik';
+let DB = { dailyReports:[], products:[], stock:[], settings:{storeName:'Galgah',waNumber:'',reminder:false} };
+let lapPeriod = 'current';
+let lapChartBar = null;
+let currentRecipe = [];
+let lastSavedReport = null;
+let currentPage = 'dashboard';
+let charts = {};
+
+const INIT_PRODUCTS = [
+  {id:'p1',name:'Pure Milk',category:'Susu Reguler',size:'Regular',price:8000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p2',name:'Pure Milk',category:'Susu Reguler',size:'Large',price:10000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p3',name:'Strawberry Delight',category:'Susu Reguler',size:'Regular',price:10000,recommended:true,seasonal:false,active:true,recipe:[]},
+  {id:'p4',name:'Strawberry Delight',category:'Susu Reguler',size:'Large',price:13000,recommended:true,seasonal:false,active:true,recipe:[]},
+  {id:'p5',name:'Rich Choco',category:'Susu Reguler',size:'Regular',price:10000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p6',name:'Rich Choco',category:'Susu Reguler',size:'Large',price:13000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p7',name:'Sea Salt',category:'Susu Reguler',size:'Regular',price:10000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p8',name:'Sea Salt',category:'Susu Reguler',size:'Large',price:12000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p9',name:'Susu Thai Tea',category:'Susu Reguler',size:'Regular',price:13000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p10',name:'Vanilla Delight',category:'Susu Reguler',size:'Large',price:13000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p11',name:'Cookies & Milk Oreo',category:'Cookies & Milk',size:'Regular',price:13000,recommended:false,seasonal:false,active:true,recipe:[]},
+  {id:'p12',name:'Cookies & Milk Regal',category:'Cookies & Milk',size:'Regular',price:13000,recommended:false,seasonal:false,active:true,recipe:[]},
+];
+const INIT_STOCK = [];
+
+// ═══ FIREBASE LAYER ═══
+function setSyncStatus(s){
+  const d=document.getElementById('sync-dot'),t=document.getElementById('sync-status');
+  if(!d)return; d.className='';
+  if(s==='syncing'){d.classList.add('syncing');if(t)t.textContent='Menyinkron…';}
+  else if(s==='error'){d.classList.add('error');if(t)t.textContent='Error';}
+  else{if(t)t.textContent='Tersinkron '+(new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}));}
+}
+async function loadDB(){
+  updateBranchUI();
+  setLoading(true,'Menghubungkan ke Firebase…');
+  try{
+    setLoading(true,'Memuat produk & stok…');
+    const snap = await getConfigRef().get();
+    if(!snap.exists){
+      DB.products=JSON.parse(JSON.stringify(INIT_PRODUCTS));
+      DB.stock=JSON.parse(JSON.stringify(INIT_STOCK));
+      DB.settings={storeName:'Galgah',waNumber:'',reminder:false};
+      DB.dailyReports=[];
+      await getConfigRef().set({products:DB.products,stock:DB.stock,settings:DB.settings});
+    } else {
+      const d=snap.data();
+      DB.products=d.products||JSON.parse(JSON.stringify(INIT_PRODUCTS));
+      DB.stock=d.stock||[];
+      DB.settings=d.settings||{storeName:'Galgah',waNumber:'',reminder:false};
+      setLoading(true,'Memuat laporan harian…');
+      const repSnap = await getDailyReportsColl().orderBy('date','desc').get();
+      DB.dailyReports = repSnap.docs.map(d=>d.data());
+    }
+    setSyncStatus('ok'); updateFBBadge(true);
+  }catch(err){
+    console.error(err); setSyncStatus('error'); updateFBBadge(false);
+    showToast('Gagal memuat data Firebase','❌');
+    DB.products=JSON.parse(JSON.stringify(INIT_PRODUCTS));
+    DB.stock=[];DB.settings={storeName:'Galgah',waNumber:'',reminder:false};DB.dailyReports=[];
+  }
+  setLoading(false);
+}
+async function saveConfig(){
+  setSyncStatus('syncing');
+  try{await getConfigRef().set({products:DB.products,stock:DB.stock,settings:DB.settings});setSyncStatus('ok');}
+  catch(e){console.error(e);setSyncStatus('error');showToast('Gagal menyimpan','❌');}
+}
+async function saveDailyReportToDB(r){
+  setSyncStatus('syncing');
+  try{await getDailyReportsColl().doc(r.id).set(r);setSyncStatus('ok');}
+  catch(e){console.error(e);setSyncStatus('error');showToast('Gagal sync ke Firebase','⚠️');}
+}
+async function deleteDailyReportFromDB(id){
+  setSyncStatus('syncing');
+  try{await getDailyReportsColl().doc(id).delete();setSyncStatus('ok');}
+  catch(e){console.error(e);setSyncStatus('error');}
+}
+function updateFBBadge(ok){
+  const b=document.getElementById('fb-status-badge');if(!b)return;
+  b.textContent=ok?'Terhubung':'Offline';
+  b.style.background=ok?'#dcfce7':'#fee2e2';b.style.color=ok?'#166534':'#dc2626';
+}
+async function confirmResetData(){
+  const bn=activeBranch==='rik'?'RIK UI':'Fasilkom';
+  if(!confirm(`⚠️ Hapus SEMUA data laporan & konfigurasi cabang ${bn}?`))return;
+  if(!confirm('Yakin? Semua laporan harian, produk, dan stok akan hilang.'))return;
+  setLoading(true,'Menghapus…');
+  try{
+    const s=await getDailyReportsColl().get();
+    for(let i=0;i<s.docs.length;i+=450){const b=db.batch();s.docs.slice(i,i+450).forEach(d=>b.delete(d.ref));await b.commit();}
+    await getConfigRef().delete();
+    setLoading(false);showToast('Semua data dihapus. Reload…','🗑️');setTimeout(()=>location.reload(),2000);
+  }catch(e){setLoading(false);showToast('Gagal','❌');}
+}
+async function confirmStartNewPeriod(){
+  const bn=activeBranch==='rik'?'RIK UI':'Fasilkom';
+  if(!confirm(`Mulai periode baru cabang ${bn}?\n\nSemua laporan harian akan dihapus. Produk & stok tetap aman.`))return;
+  setLoading(true,'Menghapus laporan lama…');
+  try{
+    const s=await getDailyReportsColl().get();
+    for(let i=0;i<s.docs.length;i+=450){const b=db.batch();s.docs.slice(i,i+450).forEach(d=>b.delete(d.ref));await b.commit();}
+    DB.dailyReports=[];
+    setLoading(false);showToast('Periode baru dimulai! 🎉','✅');
+    navigate(currentPage,null);
+  }catch(e){setLoading(false);showToast('Gagal','❌');}
+}
+
+// ═══ UTILS ═══
+function formatRp(n){return 'Rp '+Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function showToast(msg,icon='✅'){document.getElementById('toast-msg').textContent=msg;document.getElementById('toast-icon').textContent=icon;const t=document.getElementById('toast');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200);}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function setLoading(show,text='Memuat…'){const ol=document.getElementById('loading-overlay'),lt=document.getElementById('loading-text');if(ol)ol.classList.toggle('hidden',!show);if(lt&&text)lt.textContent=text;}
+
+// ═══ PERIOD CALCULATION ═══
+// Periode: tanggal 26 bulan lalu → tanggal 25 bulan ini
+function getPeriodRange(){
+  const now = new Date();
+  const day = now.getDate();
+  let startYear, startMonth;
+  if(day >= 26){
+    startYear = now.getFullYear(); startMonth = now.getMonth();
+  } else {
+    startMonth = now.getMonth() - 1;
+    startYear = startMonth < 0 ? now.getFullYear()-1 : now.getFullYear();
+    if(startMonth < 0) startMonth = 11;
+  }
+  const start = new Date(startYear, startMonth, 26);
+  return [start.toISOString().split('T')[0], now.toISOString().split('T')[0]];
+}
+function formatPeriodLabel(from, to){
+  const f = new Date(from+' ');
+  const t = new Date(to+' ');
+  const opts = {day:'numeric',month:'short',year:'numeric'};
+  return f.toLocaleDateString('id-ID',opts)+' — '+t.toLocaleDateString('id-ID',opts);
+}
+
+// Running total susu from period start
+function getTotalSusuBulanan(upToDate, periodStart){
+  return DB.dailyReports
+    .filter(r=>r.date>=periodStart && r.date<=upToDate)
+    .reduce((s,r)=>s+(r.literSusu||0),0);
+}
+
+// ═══ NAVIGATION ═══
+function navigate(page,el){
+  currentPage=page;
+  document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active','text-white');n.style.color='';n.style.background='';n.classList.add('text-gray-600');});
+  const tgt=el||document.querySelector(`.nav-item[onclick*="'${page}'"]`);
+  if(tgt){tgt.classList.add('active','text-white');tgt.classList.remove('text-gray-600');}
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const pe=document.getElementById('page-'+page);if(pe)pe.classList.add('active');
+  const titles={dashboard:'Dashboard',kasir:'Input Harian',menu:'Menu & Produk',stok:'Stok & Bahan Baku',laporan:'Laporan',settings:'Pengaturan'};
+  document.getElementById('page-title').textContent=titles[page]||page;
+  document.getElementById('page-sub').textContent=new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'});
+  closeMobileSidebar();
+  if(page==='dashboard')refreshDashboard();
+  else if(page==='kasir')renderInputHarian();
+  else if(page==='menu')renderMenuTable();
+  else if(page==='stok')renderStok();
+  else if(page==='laporan')refreshLaporan();
+  else if(page==='settings')loadSettings();
+  return false;
+}
+function toggleMobileSidebar(){document.getElementById('sidebar').classList.toggle('mobile-open');document.getElementById('sidebar-overlay').classList.toggle('hidden');}
+function closeMobileSidebar(){document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebar-overlay').classList.add('hidden');}
+function updateBranchUI(){
+  const branches={rik:{label:'RIK UI Canteen'},fasilkom:{label:'Fasilkom UI'}};
+  const lbl=document.getElementById('sidebar-branch-label');if(lbl)lbl.textContent=branches[activeBranch]?.label||'';
+  ['rik','fasilkom'].forEach(b=>{
+    const btn=document.getElementById('branch-btn-'+b);if(!btn)return;
+    if(b===activeBranch){btn.style.background='var(--rose)';btn.style.color='white';}
+    else{btn.style.background='';btn.style.color='#6b7280';}
+  });
+  const sub=document.getElementById('branch-header-badge');if(sub)sub.textContent=activeBranch==='rik'?'RIK UI':'Fasilkom';
+}
+async function switchBranch(branch){
+  if(branch===activeBranch)return;
+  activeBranch=branch;
+  localStorage.setItem('galgah_branch',branch);
+  if(lapChartBar){lapChartBar.destroy();lapChartBar=null;}
+  Object.keys(charts).forEach(k=>{try{charts[k].destroy();}catch(e){}});charts={};
+  await loadDB();
+  navigate(currentPage,null);
+  showToast(`Pindah ke ${branch==='rik'?'RIK UI':'Fasilkom'}!`,'🏫');
+}
+
+// ═══ DASHBOARD ═══
+function refreshDashboard(){
+  const h=new Date().getHours();
+  const g=h<11?'Selamat Pagi ☀️':h<15?'Selamat Siang 🌤️':h<18?'Selamat Sore 🌇':'Selamat Malam 🌙';
+  document.getElementById('greeting-text').textContent=g+', Tim Galgah!';
+  document.getElementById('greeting-date').textContent=new Date().toLocaleDateString('id-ID',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  const [periodStart] = getPeriodRange();
+  const today = todayStr();
+  const todayEntry = DB.dailyReports.find(r=>r.date===today);
+
+  document.getElementById('stat-revenue').textContent=formatRp(todayEntry?.pendapatanHarian||0);
+  document.getElementById('stat-liter-today').textContent=(todayEntry?.literSusu||0)+' L';
+  document.getElementById('stat-bestseller').textContent=todayEntry?.bestSeller||'—';
+
+  const totalSusuPeriod = DB.dailyReports.filter(r=>r.date>=periodStart&&r.date<=today).reduce((s,r)=>s+(r.literSusu||0),0);
+  document.getElementById('stat-liter-period').textContent=totalSusuPeriod+' L';
+
+  const pb=document.getElementById('period-badge');
+  if(pb)pb.textContent='Per-'+new Date(periodStart+' ').toLocaleDateString('id-ID',{day:'numeric',month:'short'});
+
+  // 7-day chart
+  const lbs=[],dt=[];
+  for(let i=6;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i);
+    const ds=d.toISOString().split('T')[0];
+    lbs.push(d.toLocaleDateString('id-ID',{weekday:'short',day:'numeric'}));
+    const entry=DB.dailyReports.find(r=>r.date===ds);
+    dt.push(entry?.pendapatanHarian||0);
+  }
+  if(charts['chart-revenue-7d'])charts['chart-revenue-7d'].destroy();
+  const ctx=document.getElementById('chart-revenue-7d');
+  if(ctx)charts['chart-revenue-7d']=new Chart(ctx,{type:'bar',data:{labels:lbs,datasets:[{label:'Pendapatan',data:dt,backgroundColor:'#F9B8C4',borderColor:'#8B2252',borderWidth:2,borderRadius:8,borderSkipped:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>formatRp(c.raw)}}},scales:{y:{ticks:{callback:v=>formatRp(v),font:{size:10}},grid:{color:'#fde8ed'}},x:{grid:{display:false},ticks:{font:{size:10}}}}}});
+
+  const rec=[...DB.dailyReports].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+  const rc=document.getElementById('recent-transactions');
+  if(!rec.length)rc.innerHTML='<p class="text-center text-gray-400 text-sm py-6">Belum ada data</p>';
+  else rc.innerHTML=rec.map(r=>`<div class="flex items-center justify-between py-2.5 border-b last:border-0" style="border-color:#fde8ed"><div class="flex-1 min-w-0 pr-2"><p class="text-xs font-semibold text-gray-700">${new Date(r.date+' ').toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short'})}</p><p class="text-xs text-gray-400 mt-0.5">${r.literSusu} L · ${r.bestSeller||'—'}</p></div><span class="text-xs font-bold flex-shrink-0" style="color:var(--rose)">${formatRp(r.pendapatanHarian)}</span></div>`).join('');
+
+  const low=DB.stock.filter(s=>s.qty<=s.threshold);
+  if(low.length){document.getElementById('stock-alert-banner').classList.remove('hidden');document.getElementById('stock-alert-text').textContent=low.map(s=>`${s.name}: ${s.qty} ${s.unit}`).join(' · ');}
+  else document.getElementById('stock-alert-banner').classList.add('hidden');
+}
+
+// ═══ INPUT HARIAN ═══
+function renderInputHarian(){
+  const [periodStart, periodEnd] = getPeriodRange();
+  const pl = document.getElementById('input-period-label');
+  if(pl) pl.textContent = 'Periode: '+formatPeriodLabel(periodStart, periodEnd);
+
+  // Set default date to today
+  const dateInput = document.getElementById('if-date');
+  if(dateInput && !dateInput.value) dateInput.value = todayStr();
+  checkExistingEntry();
+  updatePendapatanPreview();
+
+  // Rekap periode
+  const periodReports = DB.dailyReports.filter(r=>r.date>=periodStart&&r.date<=periodEnd);
+  const totalLiter = periodReports.reduce((s,r)=>s+(r.literSusu||0),0);
+  const totalRev = periodReports.reduce((s,r)=>s+(r.pendapatanHarian||0),0);
+  const el=document.getElementById('recap-liter'),er=document.getElementById('recap-revenue'),ed=document.getElementById('recap-days');
+  if(el)el.textContent=totalLiter+' L';
+  if(er)er.textContent=formatRp(totalRev);
+  if(ed)ed.textContent=periodReports.length+' hari';
+}
+
+function checkExistingEntry(){
+  const date = document.getElementById('if-date')?.value;
+  if(!date)return;
+  const ex = DB.dailyReports.find(r=>r.date===date);
+  const alert = document.getElementById('existing-entry-alert');
+  const btn = document.getElementById('if-submit-btn');
+  if(ex){
+    if(alert)alert.classList.remove('hidden');
+    if(btn)btn.textContent='✏️ Update Input Harian';
+    // Pre-fill form
+    document.getElementById('if-liter').value=ex.literSusu||'';
+    document.getElementById('if-cookies').value=ex.cookies||'';
+    document.getElementById('if-penukaran').value=ex.penukaran||'';
+    document.getElementById('if-qris').value=ex.totalQRIS||'';
+    document.getElementById('if-cash').value=ex.totalCash||'';
+    document.getElementById('if-bestseller').value=ex.bestSeller||'';
+    document.getElementById('if-keterangan').value=ex.keterangan||'';
+    document.getElementById('if-notes').value=ex.notes||'';
+    updatePendapatanPreview();
+  } else {
+    if(alert)alert.classList.add('hidden');
+    if(btn)btn.textContent='✅ Simpan Input Harian';
+    // Clear form except date
+    ['if-liter','if-cookies','if-penukaran','if-qris','if-cash','if-bestseller','if-keterangan','if-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    updatePendapatanPreview();
+  }
+}
+
+function updatePendapatanPreview(){
+  const qris=parseFloat(document.getElementById('if-qris')?.value)||0;
+  const cash=parseFloat(document.getElementById('if-cash')?.value)||0;
+  const el=document.getElementById('pendapatan-preview');
+  if(el)el.textContent=formatRp(qris+cash);
+}
+
+async function submitDailyReport(e){
+  e.preventDefault();
+  const date = document.getElementById('if-date').value;
+  const qris = parseFloat(document.getElementById('if-qris').value)||0;
+  const cash = parseFloat(document.getElementById('if-cash').value)||0;
+  const report = {
+    id: date,
+    date,
+    literSusu: parseFloat(document.getElementById('if-liter').value)||0,
+    cookies: parseInt(document.getElementById('if-cookies').value)||0,
+    penukaran: parseInt(document.getElementById('if-penukaran').value)||0,
+    totalQRIS: qris,
+    totalCash: cash,
+    pendapatanHarian: qris+cash,
+    bestSeller: document.getElementById('if-bestseller').value.trim(),
+    keterangan: document.getElementById('if-keterangan').value.trim(),
+    notes: document.getElementById('if-notes').value.trim(),
+    timestamp: new Date().toISOString()
+  };
+
+  // Upsert in local DB
+  const idx = DB.dailyReports.findIndex(r=>r.id===date);
+  if(idx>-1) DB.dailyReports[idx]=report; else DB.dailyReports.unshift(report);
+
+  lastSavedReport = report;
+
+  const ss=document.getElementById('success-summary');
+  if(ss)ss.textContent=`${date} · ${report.literSusu} L susu · ${formatRp(report.pendapatanHarian)}`;
+  openModal('daily-success-modal');
+
+  renderInputHarian();
+  await saveDailyReportToDB(report);
+}
+
+function sendDailyWA(){
+  closeModal('daily-success-modal');
+  if(!lastSavedReport)return;
+  const r=lastSavedReport;
+  const [ps]=getPeriodRange();
+  const totalSusu=getTotalSusuBulanan(r.date,ps);
+  const lines=[
+    '🐄 *Laporan Harian GALGAH*',
+    `📅 ${r.date}`,
+    '━━━━━━━━━━━━━━━━',
+    `🥛 Susu: ${r.literSusu} L (Total periode: ${totalSusu} L)`,
+    `🍪 Cookies: ${r.cookies}`,
+    `🎫 Penukaran member: ${r.penukaran}`,
+    '━━━━━━━━━━━━━━━━',
+    `💳 QRIS: ${formatRp(r.totalQRIS)}`,
+    `💵 Cash: ${formatRp(r.totalCash)}`,
+    `💰 *Total: ${formatRp(r.pendapatanHarian)}*`,
+    r.bestSeller?`⭐ Best seller: ${r.bestSeller}`:'',
+    r.keterangan?`📌 ${r.keterangan}`:'',
+    r.notes?`📝 ${r.notes}`:'',
+  ].filter(Boolean).join('\n');
+  window.open('https://wa.me/'+DB.settings.waNumber+'?text='+encodeURIComponent(lines),'_blank');
+}
+
+// ═══ MENU ═══
+function renderMenuTable(){
+  const q=(document.getElementById('menu-search')||{value:''}).value.toLowerCase();
+  const prods=DB.products.filter(p=>!q||p.name.toLowerCase().includes(q)||p.category.toLowerCase().includes(q));
+  const tb=document.getElementById('menu-table-body');
+  if(!prods.length){tb.innerHTML='<tr><td colspan="7" class="text-center py-8 text-gray-400 text-sm">Tidak ada produk</td></tr>';return;}
+  tb.innerHTML=prods.map(p=>{
+    const rc=p.recipe&&p.recipe.length?`<span class="text-xs font-medium px-2 py-1 rounded-full" style="background:#dcfce7;color:#166534">🧪 ${p.recipe.length} bahan</span>`:'<span class="text-xs text-gray-400">—</span>';
+    return `<tr class="border-t hover:bg-gray-50" style="border-color:#fafafa"><td class="px-4 py-3 text-sm font-medium text-gray-800">${p.name}${p.recommended?' ⭐':''}${p.seasonal?' 🍃':''}</td><td class="px-4 py-3 text-gray-500 text-sm">${p.category||'—'}</td><td class="px-4 py-3"><span class="px-2 py-1 rounded-lg text-xs font-medium" style="background:#fde8ed;color:var(--rose)">${p.size||'—'}</span></td><td class="px-4 py-3 font-semibold text-gray-700 text-sm">${formatRp(p.price)}</td><td class="px-4 py-3">${rc}</td><td class="px-4 py-3"><button onclick="toggleActive('${p.id}')" class="px-3 py-1 rounded-full text-xs font-semibold" style="${p.active?'background:#dcfce7;color:#166534':'background:#f3f4f6;color:#6b7280'}">${p.active?'Aktif':'Nonaktif'}</button></td><td class="px-4 py-3"><div class="flex gap-2"><button onclick="openProductModal('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#dbeafe;color:#1d4ed8">Edit</button><button onclick="deleteProduct('${p.id}')" class="px-3 py-1 rounded-lg text-xs font-medium" style="background:#fee2e2;color:#dc2626">Hapus</button></div></td></tr>`;
+  }).join('');
+}
+async function toggleActive(id){const p=DB.products.find(p=>p.id===id);if(p){p.active=!p.active;renderMenuTable();await saveConfig();showToast(p.active?'Aktif':'Nonaktif','🔄');}}
+async function deleteProduct(id){const p=DB.products.find(p=>p.id===id);if(!p||!confirm(`Hapus "${p.name}"?`))return;DB.products=DB.products.filter(p=>p.id!==id);renderMenuTable();await saveConfig();showToast('Dihapus','🗑️');}
+
+function openProductModal(id){
+  document.getElementById('product-modal-title').textContent=id?'Edit Produk':'Tambah Produk';
+  const cats=[...new Set(DB.products.map(p=>p.category).filter(Boolean))];
+  const dl=document.getElementById('category-list');if(dl)dl.innerHTML=cats.map(c=>`<option>${c}</option>`).join('');
+  if(id){
+    const p=DB.products.find(p=>p.id===id);if(!p)return;
+    document.getElementById('pf-id').value=p.id;
+    document.getElementById('pf-name').value=p.name;
+    document.getElementById('pf-category').value=p.category;
+    document.getElementById('pf-size').value=p.size;
+    document.getElementById('pf-price').value=p.price;
+    document.getElementById('pf-recommended').checked=p.recommended;
+    document.getElementById('pf-seasonal').checked=p.seasonal;
+    document.getElementById('pf-active').checked=p.active;
+    currentRecipe=JSON.parse(JSON.stringify(p.recipe||[]));
+  } else {
+    document.getElementById('pf-id').value='';
+    document.getElementById('product-form').reset();
+    document.getElementById('pf-active').checked=true;
+    currentRecipe=[];
+  }
+  renderRecipeList(); openModal('product-modal');
+}
+function renderRecipeList(){
+  const c=document.getElementById('recipe-list');if(!c)return;
+  if(!DB.stock.length){c.innerHTML='<p class="text-xs text-gray-400 italic">Tambah bahan baku di Stok dulu</p>';return;}
+  if(!currentRecipe.length){c.innerHTML='<p class="text-xs text-gray-400 italic py-1">Belum ada — klik "+ Tambah Bahan"</p>';return;}
+  c.innerHTML=currentRecipe.map((r,i)=>{
+    if(!DB.stock.find(s=>s.id===r.stockId))r.stockId=DB.stock[0].id;
+    const si=DB.stock.find(s=>s.id===r.stockId),unit=si?si.unit:'';
+    return `<div class="flex items-center gap-2"><select onchange="currentRecipe[${i}].stockId=this.value;renderRecipeList()" class="flex-1 px-2 py-1.5 rounded-lg border text-xs" style="border-color:#fde8ed">${DB.stock.map(s=>`<option value="${s.id}" ${s.id===r.stockId?'selected':''}>${s.name} (${s.unit})</option>`).join('')}</select><input type="number" value="${r.qty||''}" min="0.001" step="any" oninput="currentRecipe[${i}].qty=parseFloat(this.value)||0" class="w-20 px-2 py-1.5 rounded-lg border text-xs text-right" style="border-color:#fde8ed" placeholder="0"/><span class="text-xs text-gray-400 w-8 flex-shrink-0">${unit}</span><button type="button" onclick="currentRecipe.splice(${i},1);renderRecipeList()" class="text-red-400 text-sm font-bold flex-shrink-0">✕</button></div>`;
+  }).join('');
+}
+function addRecipeRow(){if(!DB.stock.length){showToast('Tambah bahan baku di Stok dulu','⚠️');return;}currentRecipe.push({stockId:DB.stock[0].id,qty:0});renderRecipeList();}
+async function saveProduct(e){
+  e.preventDefault();const id=document.getElementById('pf-id').value;
+  const data={id:id||'p-'+Date.now(),name:document.getElementById('pf-name').value.trim(),category:document.getElementById('pf-category').value.trim(),size:document.getElementById('pf-size').value.trim(),price:parseInt(document.getElementById('pf-price').value)||0,recommended:document.getElementById('pf-recommended').checked,seasonal:document.getElementById('pf-seasonal').checked,active:document.getElementById('pf-active').checked,recipe:currentRecipe.filter(r=>r.stockId&&r.qty>0)};
+  if(id){const i=DB.products.findIndex(p=>p.id===id);if(i>-1)DB.products[i]=data;}else DB.products.push(data);
+  closeModal('product-modal');renderMenuTable();await saveConfig();showToast(id?'Diperbarui':'Ditambahkan','✅');
+}
+
+// ═══ STOK ═══
+function renderStok(){
+  const grid=document.getElementById('stok-grid');
+  if(!DB.stock.length){grid.innerHTML='<div class="col-span-3 text-center py-16 text-gray-400"><p class="text-5xl mb-3">📦</p><p class="text-sm mb-4">Belum ada bahan baku</p><button onclick="openStokModal(null)" class="px-5 py-2 rounded-xl text-white text-sm font-semibold btn-rose">+ Tambah</button></div>';return;}
+  grid.innerHTML=DB.stock.map(s=>{
+    const r=s.qty/(s.threshold||1),st=s.qty<=s.threshold?'red':r<=2?'yellow':'green';
+    const stc={red:'#dc2626',yellow:'#ca8a04',green:'#16a34a'},stb={red:'#fee2e2',yellow:'#fef9c3',green:'#dcfce7'},stl={red:'Kritis 🔴',yellow:'Hampir Habis 🟡',green:'Aman 🟢'};
+    return `<div class="bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid ${stc[st]}44"><div class="flex items-start justify-between mb-3"><div class="flex-1 pr-2"><h5 class="font-bold text-gray-800 text-sm truncate">${s.name}</h5><p class="text-xs text-gray-400 mt-0.5">Min: ${s.threshold} ${s.unit}</p></div><span class="text-xs font-semibold px-2 py-1 rounded-full flex-shrink-0" style="background:${stb[st]};color:${stc[st]}">${stl[st]}</span></div><div class="mb-3"><p class="text-3xl font-extrabold" style="color:${stc[st]}">${s.qty}</p><p class="text-xs text-gray-400">${s.unit}</p></div><div class="bg-gray-100 rounded-full h-2 mb-4"><div class="h-2 rounded-full" style="width:${Math.min(100,r*50)}%;background:${stc[st]};transition:width 0.5s"></div></div><div class="flex gap-2"><button onclick="openStokModal('${s.id}')" class="flex-1 py-2 rounded-lg text-xs font-semibold" style="background:#dbeafe;color:#1d4ed8">✏️ Edit</button><button onclick="deleteStok('${s.id}')" class="py-2 px-3 rounded-lg text-xs font-semibold" style="background:#fee2e2;color:#dc2626">🗑️</button></div></div>`;
+  }).join('');
+}
+function openStokModal(id){document.getElementById('stok-modal-title').textContent=id?'Edit Bahan Baku':'Tambah Bahan Baku';if(id){const s=DB.stock.find(s=>s.id===id);if(!s)return;document.getElementById('sf-id').value=s.id;document.getElementById('sf-name').value=s.name;document.getElementById('sf-unit').value=s.unit;document.getElementById('sf-qty').value=s.qty;document.getElementById('sf-threshold').value=s.threshold;}else{document.getElementById('sf-id').value='';document.getElementById('stok-form').reset();}openModal('stok-modal');}
+async function saveStokItem(e){e.preventDefault();const id=document.getElementById('sf-id').value;const data={id:id||'s-'+Date.now(),name:document.getElementById('sf-name').value.trim(),unit:document.getElementById('sf-unit').value.trim(),qty:parseFloat(document.getElementById('sf-qty').value)||0,threshold:parseFloat(document.getElementById('sf-threshold').value)||0};if(id){const i=DB.stock.findIndex(s=>s.id===id);if(i>-1)DB.stock[i]=data;}else DB.stock.push(data);closeModal('stok-modal');renderStok();await saveConfig();showToast(id?'Diperbarui':'Ditambahkan','📦');}
+async function deleteStok(id){const s=DB.stock.find(s=>s.id===id);if(!s||!confirm(`Hapus "${s.name}"?`))return;DB.stock=DB.stock.filter(s=>s.id!==id);renderStok();await saveConfig();showToast('Dihapus','🗑️');}
+function openRestockModal(){document.getElementById('restock-form-body').innerHTML=DB.stock.map(s=>`<div class="flex items-center gap-3"><label class="flex-1 text-sm font-medium text-gray-700">${s.name} <span class="text-xs text-gray-400">(${s.qty} ${s.unit})</span></label><input type="number" id="rs-${s.id}" min="0" step="0.01" placeholder="Tambah" class="w-24 px-3 py-2 rounded-xl border text-sm text-right" style="border-color:#fde8ed"/><span class="text-xs text-gray-400 w-8">${s.unit}</span></div>`).join('');openModal('restock-modal');}
+async function saveRestock(){let ch=0;DB.stock.forEach(s=>{const el=document.getElementById('rs-'+s.id);if(el&&el.value&&parseFloat(el.value)>0){s.qty=Math.round((s.qty+parseFloat(el.value))*100)/100;ch++;}});closeModal('restock-modal');renderStok();await saveConfig();showToast(ch?`${ch} bahan diperbarui`:'Tidak ada perubahan',ch?'📦':'⚠️');}
+
+// ═══ LAPORAN ═══
+function setLapPeriod(p){
+  lapPeriod=p;
+  const btnC=document.getElementById('btn-current'),btnCu=document.getElementById('btn-custom');
+  if(btnC){btnC.style.background=p==='current'?'var(--rose)':'';btnC.style.color=p==='current'?'white':'';}
+  if(btnCu){btnCu.style.background=p==='custom'?'var(--rose)':'';btnCu.style.color=p==='custom'?'white':'';}
+  const cdr=document.getElementById('custom-date-range');if(cdr)cdr.classList.toggle('hidden',p!=='custom');
+  if(p!=='custom')refreshLaporan();
+}
+function getDateRange(){
+  const [ps,pe]=getPeriodRange();
+  if(lapPeriod==='current')return[ps,pe];
+  return[document.getElementById('lap-date-from').value||ps,document.getElementById('lap-date-to').value||pe];
+}
+function refreshLaporan(){
+  const [from,to]=getDateRange();
+  const pl=document.getElementById('lap-period-label');
+  if(pl)pl.textContent=formatPeriodLabel(from,to);
+
+  const reports=[...DB.dailyReports].filter(r=>r.date>=from&&r.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  const totalRev=reports.reduce((s,r)=>s+(r.pendapatanHarian||0),0);
+  const totalLiter=reports.reduce((s,r)=>s+(r.literSusu||0),0);
+  const totalQRIS=reports.reduce((s,r)=>s+(r.totalQRIS||0),0);
+  const totalCash=reports.reduce((s,r)=>s+(r.totalCash||0),0);
+
+  document.getElementById('lap-total-rev').textContent=formatRp(totalRev);
+  document.getElementById('lap-total-liter').textContent=totalLiter+' L';
+  document.getElementById('lap-total-qris').textContent=formatRp(totalQRIS);
+  document.getElementById('lap-total-cash').textContent=formatRp(totalCash);
+
+  const rc=document.getElementById('lap-row-count');if(rc)rc.textContent=reports.length+' entri';
+
+  // Chart
+  const lbs=reports.map(r=>new Date(r.date+' ').toLocaleDateString('id-ID',{day:'numeric',month:'short'}));
+  const dt=reports.map(r=>r.pendapatanHarian||0);
+  if(lapChartBar){lapChartBar.destroy();lapChartBar=null;}
+  const ctx=document.getElementById('chart-lap-daily');
+  if(ctx)lapChartBar=new Chart(ctx,{type:'bar',data:{labels:lbs,datasets:[{label:'Pendapatan',data:dt,backgroundColor:'#F9B8C4',borderColor:'#8B2252',borderWidth:2,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>formatRp(c.raw)}}},scales:{y:{ticks:{callback:v=>formatRp(v),font:{size:9}},grid:{color:'#fde8ed'}},x:{grid:{display:false},ticks:{font:{size:9}}}}}});
+
+  // Main table — compute running total susu per row
+  let runningLiter=0;
+  const tb=document.getElementById('lap-table-body');
+  if(!reports.length){tb.innerHTML='<tr><td colspan="12" class="text-center py-8 text-gray-400 text-sm">Belum ada data laporan dalam periode ini</td></tr>';return;}
+  tb.innerHTML=reports.map(r=>{
+    runningLiter=Math.round((runningLiter+(r.literSusu||0))*100)/100;
+    const dateLabel=new Date(r.date+' ').toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+    return `<tr>
+      <td class="font-medium text-gray-700">${dateLabel}</td>
+      <td class="font-semibold" style="color:var(--rose)">${r.literSusu||0}</td>
+      <td class="font-semibold text-gray-800">${runningLiter}</td>
+      <td>${r.cookies||0}</td>
+      <td>${r.penukaran||0}</td>
+      <td>${formatRp(r.totalQRIS||0)}</td>
+      <td>${formatRp(r.totalCash||0)}</td>
+      <td class="font-bold" style="color:var(--rose)">${formatRp(r.pendapatanHarian||0)}</td>
+      <td class="text-gray-600">${r.bestSeller||'—'}</td>
+      <td class="text-gray-500 italic">${r.keterangan||''}</td>
+      <td class="text-gray-500">${r.notes||''}</td>
+      <td><div class="flex gap-1"><button onclick="editReport('${r.id}')" class="px-2 py-1 rounded text-xs font-medium" style="background:#dbeafe;color:#1d4ed8">Edit</button><button onclick="deleteReport('${r.id}')" class="px-2 py-1 rounded text-xs font-medium" style="background:#fee2e2;color:#dc2626">🗑️</button></div></td>
+    </tr>`;
+  }).join('');
+}
+
+function editReport(id){
+  navigate('kasir',null);
+  setTimeout(()=>{
+    const di=document.getElementById('if-date');
+    if(di){di.value=id;checkExistingEntry();}
+  },100);
+}
+async function deleteReport(id){
+  if(!confirm('Hapus laporan tanggal '+id+'?'))return;
+  DB.dailyReports=DB.dailyReports.filter(r=>r.id!==id);
+  await deleteDailyReportFromDB(id);
+  refreshLaporan();showToast('Laporan dihapus','🗑️');
+}
+
+// ═══ SETTINGS ═══
+function loadSettings(){
+  document.getElementById('setting-store-name').value=DB.settings.storeName||'Galgah';
+  document.getElementById('setting-wa-number').value=DB.settings.waNumber||'';
+  document.getElementById('setting-reminder').checked=!!DB.settings.reminder;
+  const tt=document.getElementById('toggle-track');if(tt)tt.style.background=DB.settings.reminder?'var(--rose)':'';
+  updateFBBadge(true);
+}
+async function saveSettings(){
+  DB.settings.storeName=document.getElementById('setting-store-name').value||'Galgah';
+  DB.settings.waNumber=document.getElementById('setting-wa-number').value.replace(/\D/g,'');
+  DB.settings.reminder=document.getElementById('setting-reminder').checked;
+  await saveConfig();if(DB.settings.reminder)scheduleReminder();showToast('Tersimpan','✅');
+}
+document.addEventListener('change',e=>{if(e.target.id==='setting-reminder'){const tt=document.getElementById('toggle-track');if(tt)tt.style.background=e.target.checked?'var(--rose)':'';} });
+
+// ═══ WHATSAPP ═══
+function openWAModal(){
+  const today=todayStr(),r=DB.dailyReports.find(r=>r.date===today);
+  const [ps]=getPeriodRange();
+  const totalSusu=DB.dailyReports.filter(r2=>r2.date>=ps&&r2.date<=today).reduce((s,r2)=>s+(r2.literSusu||0),0);
+  const totalRev=DB.dailyReports.filter(r2=>r2.date>=ps&&r2.date<=today).reduce((s,r2)=>s+(r2.pendapatanHarian||0),0);
+  const msg=[
+    `🐄 *Ringkasan Harian ${DB.settings.storeName||'Galgah'}*`,
+    `📅 ${new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}`,
+    '',
+    r?[
+      `🥛 Susu hari ini: ${r.literSusu} L`,
+      `🍪 Cookies: ${r.cookies||0}`,
+      `🎫 Penukaran: ${r.penukaran||0}`,
+      `💳 QRIS: ${formatRp(r.totalQRIS||0)}`,
+      `💵 Cash: ${formatRp(r.totalCash||0)}`,
+      `💰 *Pendapatan: ${formatRp(r.pendapatanHarian||0)}*`,
+      r.bestSeller?`⭐ Best seller: ${r.bestSeller}`:'',
+      r.keterangan?`📌 ${r.keterangan}`:'',
+    ].filter(Boolean).join('\n'):'(Belum ada input hari ini)',
+    '',
+    '━━━━━━━━━━━━━━━━',
+    `📦 Total susu periode: ${totalSusu} L`,
+    `💰 Total pendapatan periode: ${formatRp(totalRev)}`,
+  ].join('\n');
+  document.getElementById('wa-message-preview').textContent=msg;
+  openModal('wa-modal');
+}
+function sendWA(){window.open('https://wa.me/'+DB.settings.waNumber+'?text='+encodeURIComponent(document.getElementById('wa-message-preview').textContent),'_blank');closeModal('wa-modal');}
+function copyWA(){navigator.clipboard.writeText(document.getElementById('wa-message-preview').textContent).then(()=>showToast('Disalin!','📋'));closeModal('wa-modal');}
+
+// ═══ PDF & CSV EXPORTS ═══
+function makePDFHeader(doc,title,sub){doc.setFillColor(139,34,82);doc.rect(0,0,210,38,'F');doc.setFontSize(22);doc.setTextColor(255,255,255);doc.setFont(undefined,'bold');doc.text('GALGAH',15,22);doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text(title,15,30);if(sub){doc.setFontSize(9);doc.setTextColor(249,184,196);doc.text(sub,15,36);}doc.setTextColor(60,60,60);}
+
+function exportLaporanPDF(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF('landscape');
+  const [from,to]=getDateRange();
+  const reports=[...DB.dailyReports].filter(r=>r.date>=from&&r.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  doc.setFillColor(139,34,82);doc.rect(0,0,297,38,'F');doc.setFontSize(22);doc.setTextColor(255,255,255);doc.setFont(undefined,'bold');doc.text('GALGAH',15,22);doc.setFontSize(10);doc.setFont(undefined,'normal');doc.text('Laporan Harian',15,30);doc.setFontSize(9);doc.setTextColor(249,184,196);doc.text(`${from} s/d ${to}`,15,36);doc.setTextColor(60,60,60);
+  let runLiter=0;
+  const rows=reports.map(r=>{
+    runLiter=Math.round((runLiter+(r.literSusu||0))*100)/100;
+    return[r.date,r.literSusu||0,runLiter,r.cookies||0,r.penukaran||0,formatRp(r.totalQRIS||0),formatRp(r.totalCash||0),formatRp(r.pendapatanHarian||0),r.bestSeller||'',r.keterangan||'',r.notes||''];
+  });
+  doc.autoTable({startY:44,head:[['Tanggal','Susu (L)','Total Susu','Cookies','Penukaran','QRIS','Cash','Pendapatan','Best Seller','Keterangan','Notes']],body:rows,headStyles:{fillColor:[139,34,82],textColor:255,fontStyle:'bold',fontSize:8},bodyStyles:{fontSize:7},columnStyles:{0:{cellWidth:28},1:{cellWidth:16},2:{cellWidth:16},3:{cellWidth:14},4:{cellWidth:18},5:{cellWidth:24},6:{cellWidth:22},7:{cellWidth:26}}});
+  const totRev=reports.reduce((s,r)=>s+(r.pendapatanHarian||0),0),totL=reports.reduce((s,r)=>s+(r.literSusu||0),0);
+  const y=doc.lastAutoTable.finalY+8;doc.setFontSize(9);doc.setFont(undefined,'bold');doc.setTextColor(139,34,82);doc.text(`Total Susu: ${totL} L   Total Pendapatan: ${formatRp(totRev)}`,15,y);
+  doc.setFontSize(7);doc.setTextColor(150);doc.text(`Dicetak dari Dashboard Galgah — ${new Date().toLocaleString('id-ID')}`,15,y+8);
+  doc.save(`Galgah_Laporan_${from}_${to}.pdf`);showToast('PDF diexport','📄');
+}
+
+function exportStokPDF(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF();
+  makePDFHeader(doc,'Daftar Stok Bahan Baku',`Dicetak: ${new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'long',year:'numeric'})}`);
+  const rows=DB.stock.map(s=>[s.name,s.qty+' '+s.unit,s.threshold+' '+s.unit,s.qty<=s.threshold?'KRITIS':s.qty<=s.threshold*2?'HAMPIR HABIS':'AMAN']);
+  doc.autoTable({startY:44,head:[['Bahan Baku','Stok Saat Ini','Threshold','Status']],body:rows,headStyles:{fillColor:[139,34,82],textColor:255,fontStyle:'bold',fontSize:9},bodyStyles:{fontSize:8}});
+  doc.save(`Galgah_Stok_${todayStr()}.pdf`);showToast('PDF stok diexport','📄');
+}
+
+function exportCSV(){
+  const [from,to]=getDateRange();
+  const reports=[...DB.dailyReports].filter(r=>r.date>=from&&r.date<=to).sort((a,b)=>a.date.localeCompare(b.date));
+  let runLiter=0;
+  const rows=[['Tanggal','Penjualan Susu (L)','Total Susu Bulanan','Cookies','Penukaran Member','Total QRIS','Total Cash','Pendapatan Harian','Best Seller','Keterangan','Notes']];
+  reports.forEach(r=>{
+    runLiter=Math.round((runLiter+(r.literSusu||0))*100)/100;
+    rows.push([r.date,r.literSusu||0,runLiter,r.cookies||0,r.penukaran||0,r.totalQRIS||0,r.totalCash||0,r.pendapatanHarian||0,r.bestSeller||'',r.keterangan||'',r.notes||'']);
+  });
+  const blob=new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`Galgah_Laporan_${from}_${to}.csv`;a.click();
+  showToast('CSV diexport','📊');
+}
+
+// ═══ REMINDER ═══
+function scheduleReminder(){const now=new Date(),t=new Date(now);t.setHours(21,0,0,0);if(t<=now)t.setDate(t.getDate()+1);setTimeout(()=>{if(DB.settings&&DB.settings.reminder)openWAModal();},t-now);}
+
+// ═══ INIT ═══
+document.addEventListener('DOMContentLoaded',async()=>{
+  updateBranchUI();
+  await loadDB();
+  refreshDashboard();
+  if(DB.settings&&DB.settings.reminder)scheduleReminder();
+});
+</script>
+</body>
+</html>
