@@ -147,6 +147,38 @@
         </div>
       </div>
 
+      <!-- Komisi Widget -->
+      <div class="bg-white rounded-2xl p-5 shadow-sm mb-6" style="border:2px solid #fde8ed">
+        <div class="flex items-start justify-between mb-4 gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xl">💸</span>
+              <h4 class="font-bold text-gray-700">Komisi Periode Ini</h4>
+              <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background:#fde8ed;color:var(--rose)">Reset tgl 26</span>
+            </div>
+            <p id="dash-komisi-status" class="text-xs text-gray-400"></p>
+          </div>
+          <div class="text-right flex-shrink-0">
+            <p class="text-xs text-gray-400 mb-0.5">Komisi saat ini</p>
+            <p id="dash-komisi-amount" class="text-2xl font-extrabold" style="color:var(--rose)">Rp 0</p>
+          </div>
+        </div>
+        <div class="mb-2">
+          <div class="flex justify-between text-xs text-gray-500 mb-1.5">
+            <span id="dash-komisi-progress-label">0 L</span>
+            <span id="dash-komisi-next-label" class="font-medium" style="color:var(--rose)"></span>
+          </div>
+          <div class="bg-gray-100 rounded-full h-3 overflow-hidden">
+            <div id="dash-komisi-bar" class="h-3 rounded-full transition-all duration-700" style="width:0%;background:linear-gradient(90deg,#F9B8C4,var(--rose))"></div>
+          </div>
+          <div class="flex justify-between text-xs text-gray-400 mt-1">
+            <span>0 L</span>
+            <span id="dash-komisi-bar-end">360 L</span>
+          </div>
+        </div>
+        <div id="dash-komisi-brackets" class="flex gap-2 mt-3 flex-wrap"></div>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-6">
         <div class="lg:col-span-3 bg-white rounded-2xl p-5 shadow-sm" style="border:1px solid #fde8ed">
           <h4 class="font-bold text-gray-700 mb-4">Pendapatan 7 Hari Terakhir</h4>
@@ -243,7 +275,7 @@
         <!-- Rekap periode -->
         <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #fde8ed">
           <h4 class="font-bold text-gray-700 mb-3">Rekap Periode Saat Ini</h4>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-3 gap-3 mb-4">
             <div class="text-center p-3 rounded-xl" style="background:#fdf2f6">
               <p class="text-xs text-gray-500 mb-1">Total Susu</p>
               <p id="recap-liter" class="text-lg font-extrabold" style="color:var(--rose)">0 L</p>
@@ -256,6 +288,17 @@
               <p class="text-xs text-gray-500 mb-1">Hari Input</p>
               <p id="recap-days" class="text-lg font-extrabold text-gray-800">0</p>
             </div>
+          </div>
+          <!-- Komisi mini widget -->
+          <div class="rounded-xl p-4" style="background:linear-gradient(135deg,#fdf2f6,#fde8ed);border:1px solid #fde8ed">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-sm font-bold text-gray-700">💸 Komisi</span>
+              <span id="recap-komisi-amount" class="text-lg font-extrabold" style="color:var(--rose)">Rp 0</span>
+            </div>
+            <div class="bg-white/60 rounded-full h-2.5 mb-1.5 overflow-hidden">
+              <div id="recap-komisi-bar" class="h-2.5 rounded-full transition-all duration-700" style="width:0%;background:var(--rose)"></div>
+            </div>
+            <p id="recap-komisi-label" class="text-xs text-gray-500"></p>
           </div>
         </div>
       </div>
@@ -703,6 +746,29 @@ async function switchBranch(branch){
   showToast(`Pindah ke ${branch==='rik'?'RIK UI':'Fasilkom'}!`,'🏫');
 }
 
+// ═══ KOMISI ═══
+function calcKomisi(totalLiter){
+  if(totalLiter<360)return 0;
+  return 100000+Math.floor((totalLiter-360)/20)*50000;
+}
+function getKomisiInfo(totalLiter){
+  const komisi=calcKomisi(totalLiter);
+  let nextThreshold,nextKomisi;
+  if(totalLiter<360){nextThreshold=360;nextKomisi=100000;}
+  else{const bracket=Math.floor((totalLiter-360)/20);nextThreshold=360+(bracket+1)*20;nextKomisi=komisi+50000;}
+  const litersToNext=Math.max(0,nextThreshold-totalLiter);
+  const brackets=[];
+  if(totalLiter>=360){
+    const earned=Math.floor((totalLiter-360)/20)+1;
+    for(let i=0;i<earned;i++){
+      const th=i===0?360:360+i*20;
+      const amt=i===0?100000:50000;
+      brackets.push({threshold:th,amount:amt});
+    }
+  }
+  return{komisi,nextThreshold,litersToNext,nextKomisi,brackets};
+}
+
 // ═══ DASHBOARD ═══
 function refreshDashboard(){
   const h=new Date().getHours();
@@ -718,8 +784,34 @@ function refreshDashboard(){
   document.getElementById('stat-liter-today').textContent=(todayEntry?.literSusu||0)+' L';
   document.getElementById('stat-bestseller').textContent=todayEntry?.bestSeller||'—';
 
-  const totalSusuPeriod = DB.dailyReports.filter(r=>r.date>=periodStart&&r.date<=today).reduce((s,r)=>s+(r.literSusu||0),0);
+  const totalSusuPeriod = DB.dailyReports.filter(r=>r.date>=periodStart&&r.date<=today).reduce((s,r)=>Math.round((s+(r.literSusu||0))*100)/100,0);
   document.getElementById('stat-liter-period').textContent=totalSusuPeriod+' L';
+
+  // Komisi widget
+  const ki=getKomisiInfo(totalSusuPeriod);
+  const kAmt=document.getElementById('dash-komisi-amount');
+  const kStatus=document.getElementById('dash-komisi-status');
+  const kProgLabel=document.getElementById('dash-komisi-progress-label');
+  const kNextLabel=document.getElementById('dash-komisi-next-label');
+  const kBar=document.getElementById('dash-komisi-bar');
+  const kBarEnd=document.getElementById('dash-komisi-bar-end');
+  const kBrackets=document.getElementById('dash-komisi-brackets');
+  if(kAmt)kAmt.textContent=formatRp(ki.komisi);
+  if(kStatus)kStatus.textContent=ki.litersToNext>0?`${ki.litersToNext} L lagi untuk komisi berikutnya`:'Semua bracket aktif!';
+  if(kProgLabel)kProgLabel.textContent=totalSusuPeriod+' L';
+  if(kNextLabel)kNextLabel.textContent=ki.litersToNext>0?`Komisi berikutnya: +${formatRp(ki.nextKomisi-ki.komisi)}`:'';
+  const barStart=totalSusuPeriod<360?0:360+Math.floor((totalSusuPeriod-360)/20)*20;
+  const barRange=totalSusuPeriod<360?360:20;
+  const barPct=Math.min(100,((totalSusuPeriod-barStart)/barRange)*100);
+  if(kBar)kBar.style.width=barPct+'%';
+  if(kBarEnd)kBarEnd.textContent=ki.nextThreshold+' L';
+  if(kBrackets){
+    if(ki.brackets.length){
+      kBrackets.innerHTML=ki.brackets.map((b,i)=>`<span class="text-xs px-2 py-1 rounded-full font-semibold" style="background:#fde8ed;color:var(--rose)">${i===0?'360L':'+'+(b.threshold-360)+'L'} → ${formatRp(b.amount)}</span>`).join('');
+    } else {
+      kBrackets.innerHTML='<span class="text-xs text-gray-400">Belum mencapai 360 L</span>';
+    }
+  }
 
   const pb=document.getElementById('period-badge');
   if(pb)pb.textContent='Per-'+new Date(periodStart+' ').toLocaleDateString('id-ID',{day:'numeric',month:'short'});
@@ -767,6 +859,18 @@ function renderInputHarian(){
   if(el)el.textContent=totalLiter+' L';
   if(er)er.textContent=formatRp(totalRev);
   if(ed)ed.textContent=periodReports.length+' hari';
+
+  // Mini komisi widget
+  const rki=getKomisiInfo(totalLiter);
+  const rka=document.getElementById('recap-komisi-amount');
+  const rkb=document.getElementById('recap-komisi-bar');
+  const rkl=document.getElementById('recap-komisi-label');
+  if(rka)rka.textContent=formatRp(rki.komisi);
+  const rBarStart=totalLiter<360?0:360+Math.floor((totalLiter-360)/20)*20;
+  const rBarRange=totalLiter<360?360:20;
+  const rBarPct=Math.min(100,((totalLiter-rBarStart)/rBarRange)*100);
+  if(rkb)rkb.style.width=rBarPct+'%';
+  if(rkl)rkl.textContent=rki.litersToNext>0?`${rki.litersToNext} L lagi → +${formatRp(rki.nextKomisi-rki.komisi)}`:'Komisi penuh!';
 }
 
 function checkExistingEntry(){
